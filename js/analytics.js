@@ -41,7 +41,7 @@ function donut(el, rows, key='rev', label='name'){
   o.plugins.tooltip={callbacks:{label:x=>' '+x.label+': '+money(x.parsed)}}; o.plugins.legend.position='bottom';
   charts.push(new Chart(el,{type:'doughnut',data:{labels:rows.map(r=>r[label]),datasets:[{data:rows.map(r=>r[key]),backgroundColor:rows.map((_,i)=>c[i%c.length]),borderWidth:0}]},options:o}));
 }
-const kpi = (l,v,id) => `<div class="card kpi"><span class="lbl">${l}</span><b ${id?`data-count="${v}"`:''}>${money(v)}</b></div>`;
+const kpi = (l,v) => `<div class="card kpi"><span class="lbl">${l}</span><b data-count="${v}">${money(v)}</b></div>`;
 const animateKpis = () => document.querySelectorAll('[data-count]').forEach(el=>countUp(el,+el.dataset.count));
 const waitChart = (fn,n=0) => typeof Chart!=='undefined' ? fn() : n<60 && setTimeout(()=>waitChart(fn,n+1),100);
 
@@ -88,7 +88,7 @@ export const analyticsView = {
       ${A.range==='custom'?`<input type="date" id="df" value="${A.from}" data-change="aDate" style="width:auto"><input type="date" id="dtt" value="${A.to}" data-change="aDate" style="width:auto">`:`<span class="muted small">${a.toLocaleDateString('ru-RU')} — ${b.toLocaleDateString('ru-RU')}</span>`}
       <div class="seg" style="margin-left:auto"><button class="${A.tab==='overview'?'on':''}" data-act="atab" data-t="overview">Обзор</button><button class="${A.tab==='orders'?'on':''}" data-act="atab" data-t="orders">Заказы</button></div></div>
     ${body()}`; },
-  after(){ kill(); if(A.tab!=='overview') return; const p=period(), arr=inRange(p);
+  after(){ kill(); animateKpis(); if(A.tab!=='overview') return; const p=period(), arr=inRange(p);
     waitChart(()=>{ revChart($('#a1'),perDay(arr,p)); const s=perService(arr); if(s.length) donut($('#a2'),s); }); }
 };
 export function registerActions(act){

@@ -1,13 +1,14 @@
 import { db, DEMO } from './db.js';
 import { views, NAV } from './views.js';
-import { S, $, toast, esc, icon } from './core.js';
+import { S, $, toast, esc, icon, maskPhone } from './core.js';
+const brand = `<div class="brand"><b>Бумеранг</b><span>${icon('pin')}Атажукина 2Б</span></div>`;
 
 const root = document.getElementById('root');
 
 function loginScreen(msg=''){
   root.innerHTML = `
   <div class="login"><form class="login-card" id="lf" autocomplete="on">
-    <div class="logo"><i>${icon('drop')}</i>CarwasH</div>
+    ${brand}<div class="logo"><i>${icon('drop')}</i>CarwasH</div>
     <h1>Вход в систему</h1><p class="muted small">Введите логин и пароль, выданные администратором</p>
     <label class="field"><span>Логин</span><input name="login" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" required autofocus></label>
     <label class="field"><span>Пароль</span><input name="pass" type="password" autocomplete="current-password" required></label>
@@ -26,11 +27,11 @@ function loginScreen(msg=''){
 async function boot(){
   const allowed = NAV.filter(n => n.roles.includes(S.user.role));
   S.tab = allowed[0].id;
-  root.innerHTML = `<div class="shell"><aside class="side"><div class="logo"><i>${icon('drop')}</i>CarwasH</div>
+  root.innerHTML = `<div class="shell"><aside class="side">${brand}<div class="logo"><i>${icon('drop')}</i>CarwasH</div>
     <nav class="nav" id="nav">${allowed.map(n=>`<button data-tab="${n.id}">${icon(n.icon)}<span>${n.title}</span></button>`).join('')}</nav>
     <div class="me"><div><b>${esc(S.user.name)}</b><br><span class="role">${S.user.role==='admin'?'Администратор':'Сотрудник'}</span></div>
     <button class="btn sm" id="out">Выйти</button></div></aside>
-    <div><div class="topbar"><div class="logo"><i>${icon('drop')}</i>CarwasH</div><button class="btn sm" id="out2">Выйти</button></div>
+    <div><div class="topbar">${brand}<button class="btn sm" id="out2">Выйти</button></div>
     <main class="main" id="main"><div class="grid g4"><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div></div></main></div></div>`;
   const out = async () => { await db.signOut(); S.user=null; loginScreen(); };
   $('#out').onclick = out; $('#out2').onclick = out;
@@ -54,7 +55,10 @@ document.addEventListener('click', async e => {
   const fn = views.actions[el.dataset.act]; if(!fn) return;
   try{ await fn(el, e); }catch(err){ toast(err.message,true); }
 });
-document.addEventListener('input', e => { const el=e.target.closest('[data-input]'); if(el) views.actions[el.dataset.input](el,e); });
+document.addEventListener('input', e => {
+  const ph = e.target.closest('[data-phone]'); if(ph) ph.value = maskPhone(ph.value);
+  const el = e.target.closest('[data-input]'); if(el) views.actions[el.dataset.input](el,e);
+});
 document.addEventListener('change', async e => { const el=e.target.closest('[data-change]'); if(el){ try{ await views.actions[el.dataset.change](el,e);}catch(err){toast(err.message,true);} } });
 document.addEventListener('submit', async e => { const f=e.target.closest('[data-form]'); if(!f) return; e.preventDefault(); try{ await views.actions[f.dataset.form](f,e);}catch(err){toast(err.message,true);} });
 

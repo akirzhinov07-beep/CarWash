@@ -1,5 +1,7 @@
 import { db } from './db.js';
-import { S, $, esc, money, dt, dkey, localInput, toast, modal, countUp, icon } from './core.js';
+import { S, $, esc, money, dt, dkey, localInput, toast, modal, countUp, icon, maskPhone } from './core.js';
+const CATS = ['Мойка','Детейлинг','Химчистка','Полировка','Защита','Прочее'];
+const catRank = c => { const i = CATS.indexOf(c); return i<0 ? 99 : i; };
 import { analyticsView, dashboardView, registerActions } from './analytics.js';
 
 export const NAV = [
@@ -23,7 +25,7 @@ const staffName = id => S.data.staff.find(s=>s.id===id)?.name || '—';
 const rec = { client:null, svcs:new Set(), q:'' };
 const recView = {
   html(){
-    const cats = [...new Set(S.data.services.filter(s=>s.active).map(s=>s.category))];
+    const cats = [...new Set(S.data.services.filter(s=>s.active).map(s=>s.category))].sort((a,b)=>catRank(a)-catRank(b));
     return `<div class="head"><h2>Запись клиента</h2></div>
     <form data-form="saveBooking" class="grid g-rec" autocomplete="off">
       <div class="card stagger"><h3>1. Клиент</h3>
@@ -31,7 +33,7 @@ const recView = {
         <label class="field" style="margin-top:0"><span>Поиск по имени, телефону или авто</span><input data-input="recSearch" id="rq" placeholder="Начните вводить…"></label>
         <div id="sugg"></div>
         <div class="f2"><label class="field"><span>Имя клиента</span><input name="name" required></label>
-        <label class="field"><span>Телефон *</span><input name="phone" type="tel" inputmode="tel" placeholder="+7 900 000-00-00" required></label></div>
+        <label class="field"><span>Телефон *</span><input name="phone" type="tel" inputmode="tel" placeholder="+7 (900) 000-00-00" data-phone data-input="recPhone" required></label></div>
         <label class="field"><span>Марка и модель авто *</span><input name="car" placeholder="Toyota Camry" required></label>
         <div class="f2"><label class="field"><span>Дата и время</span><input name="when" type="datetime-local" value="${localInput()}" required></label>
         <label class="field"><span>Сотрудник (необязательно)</span><select name="staff"><option value="">Любой</option>${S.data.staff.filter(s=>s.active).map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select></label></div>
@@ -117,13 +119,20 @@ A.recSearch = el => {
   const r = S.data.clients.filter(c=>c.name.toLowerCase().includes(q)||(qd.length>=3&&digits(c.phone).includes(qd))||(c.car||'').toLowerCase().includes(q)).slice(0,6);
   box.innerHTML = r.length? `<div class="suggest">${r.map(c=>`<button type="button" data-act="pickClient" data-id="${c.id}"><span><b>${esc(c.name)}</b> · ${esc(c.car||'')}</span><span class="muted">${esc(c.phone)}</span></button>`).join('')}</div>` : '<p class="muted small" style="margin-top:6px">Не найден — заполните данные ниже, клиент сохранится автоматически</p>';
 };
+A.recPhone = el => {
+  const d = digits(el.value), f = el.form;
+  if(rec.client && digits(rec.client.phone)!==d){ rec.client=null; recView.sync(); }
+  if(d.length!==11 || rec.client) return;
+  const c = S.data.clients.find(x=>digits(x.phone)===d); if(!c) return;
+  rec.client=c; f.name.value=c.name; f.car.value=c.car||''; recView.sync(); toast('Клиент найден: данные подставлены');
+};
 A.pickClient = el => {
   const c = S.data.clients.find(x=>x.id===+el.dataset.id); rec.client=c; const f=$('form[data-form=saveBooking]');
-  f.name.value=c.name; f.phone.value=c.phone; f.car.value=c.car||''; $('#sugg').innerHTML=''; $('#rq').value=''; recView.sync();
+  f.name.value=c.name; f.phone.value=maskPhone(c.phone); f.car.value=c.car||''; $('#sugg').innerHTML=''; $('#rq').value=''; recView.sync();
 };
 A.saveBooking = async f => {
   const name=f.name.value.trim(), phone=f.phone.value.trim(), car=f.car.value.trim();
-  if(digits(phone).length<10) throw new Error('Введите корректный номер телефона');
+  if(digits(phone).length!==11) throw new Error('Введите номер полностью: +7 (900) 000-00-00');
   if(!rec.svcs.size) throw new Error('Выберите хотя бы одну услугу');
   let client = rec.client || S.data.clients.find(c=>digits(c.phone)===digits(phone));
   if(!client){ client = await db.insert('clients',{name,phone,car}); S.data.clients.push(client); }
@@ -142,14 +151,14 @@ A.setStatus = async el => {
   if(v==='pending') return;
   if(v==='cancelled'){ b.status='cancelled'; await db.update('bookings',b.id,{status:'cancelled'}); toast('Запись отменена'); return S.render(); }
   const m = modal(`<h3>Оплата</h3><p class="muted">${esc(b.client_name)} · ${esc(b.car)} · <b>${money(b.total)}</b></p>
-    <form data-form="payDone" data-id="${b.id}"><label class="field"><span>Тип оплаты</span><select name="pay" required><option value="cash">Наличными</option><option value="card">Безналичная оплата</option></select></label>
+    <form data-form="payDone" data-id="${b.id}"><div class="field"><span>Тип оплаты</span><div class="paychoice"><label class="opt"><input type="radio" name="pay" value="cash" checked><b>💵 Наличными</b></label><label class="opt"><input type="radio" name="pay" value="card"><b>💳 Безналичная оплата</b></label></div></div>
     <label class="field"><span>Кто выполнил</span><select name="staff" required><option value="">— выберите —</option>${S.data.staff.filter(s=>s.active).map(s=>`<option value="${s.id}"${s.id===b.staff_id?' selected':''}>${esc(s.name)}</option>`).join('')}</select></label>
     <div class="actions"><button type="button" class="btn" data-act="closeModal">Отмена</button><button class="btn primary">Подтвердить</button></div></form>`);
   m.addEventListener('mousedown', e=>{ if(e.target===m) S.render(); });
 };
 A.closeModal = el => { el.closest('.overlay').remove(); S.render(); };
 A.payDone = async f => {
-  const b = S.data.bookings.find(x=>x.id===+f.dataset.id), pay_type=f.pay.value, staff_id=+f.staff.value;
+  const b = S.data.bookings.find(x=>x.id===+f.dataset.id), pay_type=f.querySelector('[name=pay]:checked').value, staff_id=+f.staff.value;
   await db.update('bookings',b.id,{status:'done',pay_type,staff_id});
   Object.assign(b,{status:'done',pay_type,staff_id});
   const o = { booking_id:b.id, client_name:b.client_name, phone:b.phone, car:b.car, services:b.services, total:b.total, staff_id, pay_type };
@@ -159,13 +168,14 @@ A.payDone = async f => {
 A.clSearch = el => { cl.q=el.value; $('#clrows').innerHTML=clientRows(); };
 const clientForm = c => modal(`<h3>${c?'Клиент':'Новый клиент'}</h3><form data-form="saveClient" data-id="${c?.id||''}">
   <label class="field"><span>ФИО</span><input name="name" value="${esc(c?.name)}" required></label>
-  <label class="field"><span>Телефон</span><input name="phone" type="tel" value="${esc(c?.phone)}" required></label>
+  <label class="field"><span>Телефон</span><input name="phone" type="tel" inputmode="tel" placeholder="+7 (900) 000-00-00" data-phone value="${esc(c?.phone?maskPhone(c.phone):'')}" required></label>
   <label class="field"><span>Авто</span><input name="car" value="${esc(c?.car)}"></label>
   <label class="field"><span>Заметка</span><textarea name="note">${esc(c?.note)}</textarea></label>
   <div class="actions">${c&&isAdmin()?'<button type="button" class="btn danger" data-act="delClient" data-id="'+c.id+'">Удалить</button>':''}<button type="button" class="btn" data-act="closeModal">Отмена</button><button class="btn primary">Сохранить</button></div></form>`);
 A.newClient = () => clientForm(null);
 A.editClient = el => clientForm(S.data.clients.find(c=>c.id===+el.dataset.id));
 A.saveClient = async f => {
+  if(digits(f.phone.value).length!==11) throw new Error('Введите номер полностью: +7 (900) 000-00-00');
   const row={name:f.name.value.trim(),phone:f.phone.value.trim(),car:f.car.value.trim(),note:f.note.value.trim()}, id=+f.dataset.id;
   if(id){ const r=await db.update('clients',id,row); Object.assign(S.data.clients.find(c=>c.id===id),r); } else S.data.clients.push(await db.insert('clients',row));
   f.closest('.overlay').remove(); toast('Сохранено ✓'); S.render();
@@ -174,9 +184,8 @@ A.delClient = async el => { if(!confirm('Удалить клиента?')) retur
 A.editService = el => { const s=S.data.services.find(x=>x.id===+el.dataset.id);
   modal(`<h3>${s?'Услуга':'Новая услуга'}</h3><form data-form="saveService" data-id="${s?.id||''}">
   <label class="field"><span>Название</span><input name="name" value="${esc(s?.name)}" required></label>
-  <div class="f2"><label class="field"><span>Категория</span><input name="category" value="${esc(s?.category||'Мойка')}" list="cats" required></label>
+  <div class="f2"><label class="field"><span>Категория</span><select name="category" required>${[...new Set([...CATS,...S.data.services.map(x=>x.category)])].map(c=>`<option${c===(s?.category||'Мойка')?' selected':''}>${esc(c)}</option>`).join('')}</select></label>
   <label class="field"><span>Цена, ₽</span><input name="price" type="number" min="0" value="${s?.price??''}" required></label></div>
-  <datalist id="cats">${[...new Set(S.data.services.map(x=>x.category))].map(c=>`<option>${esc(c)}</option>`).join('')}</datalist>
   <div class="f2"><label class="field"><span>Минут</span><input name="minutes" type="number" min="5" value="${s?.minutes??30}" required></label>
   <label class="field"><span>Статус</span><select name="active"><option value="1"${s?.active!==false?' selected':''}>Активна</option><option value="0"${s?.active===false?' selected':''}>Скрыта</option></select></label></div>
   <div class="actions"><button type="button" class="btn" data-act="closeModal">Отмена</button><button class="btn primary">Сохранить</button></div></form>`); };
@@ -188,10 +197,18 @@ A.saveService = async f => {
 A.editStaff = el => { const s=S.data.staff.find(x=>x.id===+el.dataset.id);
   modal(`<h3>${s?'Сотрудник':'Новый сотрудник'}</h3><form data-form="saveStaff" data-id="${s?.id||''}">
   <label class="field"><span>Имя</span><input name="name" value="${esc(s?.name)}" required></label>
-  <div class="f2"><label class="field"><span>Должность</span><input name="position" value="${esc(s?.position)}"></label><label class="field"><span>Телефон</span><input name="phone" value="${esc(s?.phone)}"></label></div>
+  <div class="f2"><label class="field"><span>Должность</span><input name="position" value="${esc(s?.position)}"></label><label class="field"><span>Телефон</span><input name="phone" type="tel" inputmode="tel" placeholder="+7 (900) 000-00-00" data-phone value="${esc(s?.phone?maskPhone(s.phone):'')}"></label></div>
   <div class="f2"><label class="field"><span>% от заказа</span><input name="percent" type="number" min="0" max="100" value="${s?pay(s.id):30}" required></label>
   <label class="field"><span>Статус</span><select name="active"><option value="1"${s?.active!==false?' selected':''}>Работает</option><option value="0"${s?.active===false?' selected':''}>Не работает</option></select></label></div>
-  <div class="actions"><button type="button" class="btn" data-act="closeModal">Отмена</button><button class="btn primary">Сохранить</button></div></form>`); };
+  <div class="actions">${s?`<button type="button" class="btn danger" data-act="delStaff" data-id="${s.id}">Удалить</button>`:''}<button type="button" class="btn" data-act="closeModal">Отмена</button><button class="btn primary">Сохранить</button></div></form>`); };
+A.delStaff = async el => {
+  const id=+el.dataset.id, s=S.data.staff.find(x=>x.id===id);
+  if(!confirm(`Удалить сотрудника «${s.name}» навсегда?\n\nВ старых заказах он станет «Не указан», а его процент пропадёт из расчёта зарплат в аналитике. Если он просто уволился, лучше поставить статус «Не работает».`)) return;
+  await db.remove('staff',id);
+  S.data.staff=S.data.staff.filter(x=>x.id!==id); S.data.staff_pay=S.data.staff_pay.filter(x=>x.staff_id!==id);
+  S.data.bookings.forEach(b=>{ if(b.staff_id===id) b.staff_id=null; }); S.data.orders.forEach(o=>{ if(o.staff_id===id) o.staff_id=null; });
+  el.closest('.overlay').remove(); toast('Сотрудник удалён'); S.render();
+};
 A.saveStaff = async f => {
   const row={name:f.name.value.trim(),position:f.position.value.trim(),phone:f.phone.value.trim(),active:f.active.value==='1'}, id=+f.dataset.id, percent=+f.percent.value;
   let r; if(id){ r=await db.update('staff',id,row); Object.assign(S.data.staff.find(x=>x.id===id),r); } else { r=await db.insert('staff',row); S.data.staff.push(r); }

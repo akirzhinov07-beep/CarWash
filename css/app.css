@@ -130,3 +130,42 @@ tbody tr{transition:background .15s}tbody tr:hover{background:var(--surface2)}
 }
 @media (max-width:480px){.g4,.g3{grid-template-columns:1fr}}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-delay:0s!important;transition-duration:.01ms!important}}
+
+/* ===== v2: бренд, оплата, правки вёрстки, анимации ===== */
+.brand{display:flex;flex-direction:column;gap:2px;padding:2px 8px 12px;margin-bottom:6px;border-bottom:1px solid var(--line)}
+.brand b{font-size:20px;letter-spacing:-.025em;background:linear-gradient(90deg,var(--brand),var(--c2));-webkit-background-clip:text;background-clip:text;color:transparent;width:fit-content}
+.brand span{display:flex;align-items:center;gap:5px;font-size:12.5px;color:var(--muted)}
+.brand svg{width:14px;height:14px;flex:none}
+.login-card .brand{padding:0 0 14px;margin-bottom:16px}
+.side{height:100vh;height:100dvh;overflow-y:auto}
+.f2>*,.row>*{min-width:0}
+input[type=datetime-local],input[type=date]{min-width:0;-webkit-appearance:none;appearance:none;text-align:left;display:block}
+.paychoice{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.opt{display:flex;align-items:center;justify-content:center;text-align:center;min-height:64px;padding:10px;border:1.5px solid var(--line);border-radius:12px;cursor:pointer;transition:all .18s var(--ease)}
+.opt input{position:absolute;opacity:0;pointer-events:none}
+.opt:hover{border-color:var(--brand)}
+.opt:has(input:checked){border-color:var(--brand);background:var(--brand-soft);color:var(--brand);transform:translateY(-1px);box-shadow:0 6px 16px color-mix(in srgb,var(--brand) 22%,transparent)}
+.opt:has(input:focus-visible){outline:3px solid color-mix(in srgb,var(--brand) 55%,transparent);outline-offset:2px}
+@media (max-width:480px){.paychoice{grid-template-columns:1fr}}
+
+/* анимации (только transform/opacity, уважают prefers-reduced-motion) */
+.logo i{animation:bob 3.6s ease-in-out infinite}
+@keyframes bob{50%{transform:translateY(-2px) rotate(-4deg)}}
+.nav button{position:relative}
+.nav button::before{content:"";position:absolute;left:0;top:11px;bottom:11px;width:3px;border-radius:3px;background:var(--brand);transform:scaleY(0);transition:transform .25s var(--ease)}
+.nav button.on::before{transform:scaleY(1)}
+.nav button svg{transition:transform .2s var(--ease)}
+.nav button:hover svg{transform:scale(1.12)}
+.kpi{transition:transform .2s var(--ease),box-shadow .2s}
+.kpi:hover{transform:translateY(-3px)}
+.chip.on{animation:chippop .28s var(--ease)}
+@keyframes chippop{40%{transform:scale(1.05)}}
+tbody tr{animation:rise .38s var(--ease) both}
+tbody tr:nth-child(2){animation-delay:.03s}tbody tr:nth-child(3){animation-delay:.06s}tbody tr:nth-child(4){animation-delay:.09s}
+tbody tr:nth-child(5){animation-delay:.12s}tbody tr:nth-child(6){animation-delay:.15s}tbody tr:nth-child(n+7){animation-delay:.18s}
+.picked{animation:pop .3s var(--ease) both}
+.suggest{animation:pop .2s var(--ease) both}
+.btn.primary{position:relative;overflow:hidden}
+.btn.primary::after{content:"";position:absolute;inset:0;background:linear-gradient(110deg,transparent 30%,rgba(255,255,255,.28) 50%,transparent 70%);transform:translateX(-120%)}
+.btn.primary:hover::after{transform:translateX(120%);transition:transform .7s var(--ease)}
+.seg button{transition:all .2s var(--ease)}
