@@ -120,6 +120,11 @@ export const db = {
     if(error) throw new Error(error.message);
     return row;
   },
+  async updateWhere(table, col, val, patch){
+    if(DEMO){ demo[table].filter(x=>x[col]===val).forEach(x=>Object.assign(x,patch)); demoSave(); return; }
+    const c = await supa(); const { error } = await c.from(table).update(patch).eq(col, val);
+    if(error) throw new Error(error.message);
+  },
   async remove(table, id){
     if(DEMO){ demo[table]=demo[table].filter(x=>x.id!==id); demoSave(); return; }
     const c = await supa();

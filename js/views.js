@@ -23,7 +23,40 @@ const bySvc = id => S.data.services.find(s=>s.id===id);
 const staffName = id => S.data.staff.find(s=>s.id===id)?.name || '—';
 
 /* ================= ЗАПИСЬ ================= */
-const rec = { client:null, svcs:new Set(), q:'' };
+const rec = { client:null, svcs:new Set(), q:'', date:null, time:null };
+const pad2 = n => String(n).padStart(2,'0');
+const SLOTS = []; for(let m=8*60; m<=21*60+30; m+=30) SLOTS.push(pad2(Math.floor(m/60))+':'+pad2(m%60));
+const toMin = t => +t.slice(0,2)*60 + +t.slice(3,5);
+function recDefaults(){
+  const now=new Date(), today=dkey(now);
+  if(rec.date && rec.date>=today && rec.time) return;
+  let m = Math.ceil((now.getHours()*60+now.getMinutes())/30)*30;
+  if(m<8*60) m=8*60;
+  if(m>21*60+30){ const t=new Date(now.getTime()+864e5); rec.date=dkey(t); rec.time='09:00'; }
+  else { rec.date=today; rec.time=pad2(Math.floor(m/60))+':'+pad2(m%60); }
+}
+function slotsHtml(){
+  const now=new Date(), isToday=rec.date===dkey(now), nowM=now.getHours()*60+now.getMinutes();
+  const day=S.data.bookings.filter(b=>b.status!=='cancelled' && dkey(b.starts_at)===rec.date);
+  return SLOTS.map(t=>{
+    const m=toMin(t), n=day.filter(b=>{ const d=new Date(b.starts_at), bm=d.getHours()*60+d.getMinutes(); return bm>=m && bm<m+30; }).length;
+    const past = isToday && m+30<=nowM;
+    return `<button type="button" class="slot${rec.time===t?' on':''}${n?' busy':''}" data-act="recSlot" data-t="${t}"${past?' disabled':''}>${t}${n?`<small>занято: ${n}</small>`:''}</button>`;
+  }).join('');
+}
+function whenBlock(){
+  recDefaults(); const today=dkey(new Date()), tm=dkey(new Date(Date.now()+864e5));
+  return `<div class="field"><span>Дата</span><div class="row"><div class="seg" id="recdays">${dayBtns(today,tm)}</div>
+    <input type="date" id="recdate" value="${rec.date}" min="${today}" data-change="recDate" style="width:auto"></div></div>
+  <div class="field"><span>Время <b id="rectime" class="num" style="color:var(--text)">${rec.time||''}</b></span><div class="slots" id="slots">${slotsHtml()}</div>
+    <div class="row" style="margin-top:8px"><button type="button" class="btn sm" data-act="recNow">Сейчас</button><label class="muted small" style="display:flex;align-items:center;gap:8px">или своё время <input type="time" step="300" id="rectcustom" data-change="recTime" style="width:auto;min-height:36px"></label></div></div>`;
+}
+const dayBtns = (today,tm) => `<button type="button" class="${rec.date===today?'on':''}" data-act="recDay" data-d="0">Сегодня</button><button type="button" class="${rec.date===tm?'on':''}" data-act="recDay" data-d="1">Завтра</button>`;
+function refreshWhen(){
+  const today=dkey(new Date()), tm=dkey(new Date(Date.now()+864e5));
+  const a=$('#recdays'); if(a) a.innerHTML=dayBtns(today,tm);
+  const d=$('#recdate'); if(d) d.value=rec.date; const s=$('#slots'); if(s) s.innerHTML=slotsHtml(); const t=$('#rectime'); if(t) t.textContent=rec.time||'';
+}
 const recView = {
   html(){
     const cats = [...new Set(S.data.services.filter(s=>s.active).map(s=>s.category))].sort((a,b)=>catRank(a)-catRank(b));
@@ -36,8 +69,8 @@ const recView = {
         <div class="f2"><label class="field"><span>Имя клиента</span><input name="name" required></label>
         <label class="field"><span>Телефон *</span><input name="phone" type="tel" inputmode="tel" placeholder="+7 (900) 000-00-00" data-phone data-input="recPhone" required></label></div>
         <label class="field"><span>Марка и модель авто *</span><input name="car" placeholder="Toyota Camry" required></label>
-        <div class="f2"><label class="field"><span>Дата и время</span><input name="when" type="datetime-local" value="${localInput()}" required></label>
-        <label class="field"><span>Сотрудник (необязательно)</span><select name="staff"><option value="">Любой</option>${S.data.staff.filter(s=>s.active).map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select></label></div>
+        ${whenBlock()}
+        <div><label class="field"><span>Сотрудник (необязательно)</span><select name="staff"><option value="">Любой</option>${S.data.staff.filter(s=>s.active).map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select></label></div>
         <label class="field"><span>Комментарий</span><textarea name="comment"></textarea></label>
       </div>
       <div class="card stagger"><h3>2. Услуги</h3>
@@ -144,6 +177,11 @@ const A = views.actions;
 registerActions(A);
 
 /* ---------- действия ---------- */
+A.recDay = el => { const d=new Date(); d.setDate(d.getDate()+ +el.dataset.d); rec.date=dkey(d); if(rec.date===dkey(new Date()) && rec.time && toMin(rec.time)+30<=new Date().getHours()*60+new Date().getMinutes()) { rec.time=null; } refreshWhen(); };
+A.recDate = el => { if(!el.value) return; rec.date=el.value; refreshWhen(); };
+A.recSlot = el => { rec.time=el.dataset.t; const c=$('#rectcustom'); if(c) c.value=''; refreshWhen(); };
+A.recNow = () => { const n=new Date(); rec.date=dkey(n); rec.time=pad2(n.getHours())+':'+pad2(n.getMinutes()); refreshWhen(); };
+A.recTime = el => { if(el.value){ rec.time=el.value; refreshWhen(); } };
 A.togSvc = el => { const id=+el.dataset.id; rec.svcs.has(id)?rec.svcs.delete(id):rec.svcs.add(id); el.classList.toggle('on'); recView.sync(); };
 A.unpick = () => { rec.client=null; recView.sync(); };
 A.recSearch = el => {
@@ -167,13 +205,14 @@ A.saveBooking = async f => {
   const name=f.name.value.trim(), phone=f.phone.value.trim(), car=f.car.value.trim();
   if(digits(phone).length!==11) throw new Error('Введите номер полностью: +7 (900) 000-00-00');
   if(!rec.svcs.size) throw new Error('Выберите хотя бы одну услугу');
+  if(!rec.date || !rec.time) throw new Error('Выберите дату и время');
   let client = rec.client || S.data.clients.find(c=>digits(c.phone)===digits(phone));
   if(!client){ client = await db.insert('clients',{name,phone,car}); S.data.clients.push(client); }
   else if(client.car!==car && car){ await db.update('clients',client.id,{car}); client.car=car; }
   const svcs=[...rec.svcs].map(id=>{const s=bySvc(id);return {id:s.id,name:s.name,category:s.category,price:s.price};});
   const b = await db.insert('bookings',{ client_id:client.id, client_name:name||client.name, phone, car, comment:f.comment.value.trim()||null,
-    services:svcs, total:svcs.reduce((s,x)=>s+x.price,0), staff_id:f.staff.value?+f.staff.value:null, starts_at:new Date(f.when.value).toISOString() });
-  S.data.bookings.push(b); rec.client=null; rec.svcs=new Set(); bk.day=dkey(b.starts_at);
+    services:svcs, total:svcs.reduce((s,x)=>s+x.price,0), staff_id:f.staff.value?+f.staff.value:null, starts_at:new Date(`${rec.date}T${rec.time}`).toISOString() });
+  S.data.bookings.push(b); rec.client=null; rec.svcs=new Set(); rec.date=null; rec.time=null; bk.day=dkey(b.starts_at);
   toast('Клиент записан ✓'); S.tab='bookings'; S.render();
 };
 A.setDay = el => { bk.day=el.value||dkey(new Date()); S.render(); };
@@ -210,8 +249,18 @@ A.editClient = el => clientForm(S.data.clients.find(c=>c.id===+el.dataset.id));
 A.saveClient = async f => {
   if(digits(f.phone.value).length!==11) throw new Error('Введите номер полностью: +7 (900) 000-00-00');
   const row={name:f.name.value.trim(),phone:f.phone.value.trim(),car:f.car.value.trim(),note:f.note.value.trim()}, id=+f.dataset.id;
-  if(id){ const r=await db.update('clients',id,row); Object.assign(S.data.clients.find(c=>c.id===id),r); } else S.data.clients.push(await db.insert('clients',row));
-  f.closest('.overlay').remove(); toast('Сохранено ✓'); S.render();
+  if(id){
+    const old={...S.data.clients.find(c=>c.id===id)};
+    const r=await db.update('clients',id,row); Object.assign(S.data.clients.find(c=>c.id===id),r);
+    if(old.name!==row.name || old.phone!==row.phone){
+      const patch={client_name:row.name, phone:row.phone};
+      await db.updateWhere('bookings','client_id',id,patch);
+      S.data.bookings.filter(b=>b.client_id===id).forEach(b=>Object.assign(b,patch));
+      const phones=[...new Set(S.data.orders.filter(o=>digits(o.phone)===digits(old.phone)).map(o=>o.phone))];
+      for(const p of phones){ await db.updateWhere('orders','phone',p,patch); S.data.orders.filter(o=>o.phone===p).forEach(o=>Object.assign(o,patch)); }
+    }
+  } else S.data.clients.push(await db.insert('clients',row));
+  f.closest('.overlay').remove(); toast('Сохранено ✓ (имя обновлено во всех записях и заказах)'); S.render();
 };
 A.delClient = async el => { if(!confirm('Удалить клиента?')) return; const id=+el.dataset.id; await db.remove('clients',id); S.data.clients=S.data.clients.filter(c=>c.id!==id); el.closest('.overlay').remove(); S.render(); };
 A.editService = el => { const s=S.data.services.find(x=>x.id===+el.dataset.id);
