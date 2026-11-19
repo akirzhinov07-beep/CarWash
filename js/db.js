@@ -4,7 +4,7 @@ import { SUPABASE_URL, SUPABASE_KEY, LOGIN_DOMAIN } from './config.js';
 export const DEMO = new URLSearchParams(location.search).has('demo');
 let sb = null;
 
-const T = ['clients','services','staff','bookings','orders','staff_pay','supplies','profiles'];
+const T = ['clients','services','staff','bookings','orders','staff_pay','supplies','profiles','settings'];
 const ADMIN_ONLY = ['orders','staff_pay','supplies','profiles'];
 
 async function supa(){
@@ -33,6 +33,7 @@ let demo = DEMO ? demoLoad() : null;
 if(demo && !demo.supplies) demo.supplies = [];
 if(demo && !demo.profiles) demo.profiles = [{id:'admin',full_name:'admin',role:'admin',staff_id:null}];
 if(demo && !demo.creds) demo.creds = {};
+if(demo && !demo.settings) demo.settings = [];
 const demoSave = () => localStorage.setItem(LS, JSON.stringify(demo));
 
 /* ---------- публичный API ---------- */
@@ -68,10 +69,11 @@ export const db = {
     if(DEMO){ names.forEach(n => out[n]=[...demo[n]]); return fill(out); }
     const c = await supa();
     await Promise.all(names.map(async n => {
-      let q = c.from(n).select('*'); if(n!=='staff_pay') q = q.order('id',{ascending:true});
+      let q = c.from(n).select('*'); if(n!=='staff_pay' && n!=='settings') q = q.order('id',{ascending:true});
       const { data, error } = await q.limit(5000);
       if(error){
         if(n==='supplies'){ out.supplies = []; out._suppliesMissing = true; return; }
+        if(n==='settings'){ out.settings = []; out._settingsMissing = true; return; }
         throw new Error(error.message);
       }
       out[n] = data;

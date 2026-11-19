@@ -1,5 +1,5 @@
 import { db } from './db.js';
-import { S, $, esc, money, dt, dkey, localInput, toast, modal, countUp, icon, maskPhone } from './core.js';
+import { S, $, esc, money, dt, dkey, localInput, toast, modal, countUp, icon, maskPhone, cfg } from './core.js';
 const CATS = ['Мойка','Детейлинг','Химчистка','Полировка','Защита','Прочее'];
 const catRank = c => { const i = CATS.indexOf(c); return i<0 ? 99 : i; };
 import { analyticsView, dashboardView, registerActions } from './analytics.js';
@@ -13,6 +13,7 @@ export const NAV = [
   { id:'staff', title:'Сотрудники', icon:'badge', roles:['admin'] },
   { id:'supplies', title:'Расходники', icon:'box', roles:['admin'] },
   { id:'analytics', title:'Аналитика', icon:'chart', roles:['admin'] },
+  { id:'settings', title:'Настройки', icon:'gear', roles:['admin'] },
 ];
 const digits = p => String(p||'').replace(/\D/g,'').replace(/^8(?=\d{10}$)/,'7');
 const isAdmin = () => S.user.role==='admin';
@@ -25,36 +26,39 @@ const staffName = id => S.data.staff.find(s=>s.id===id)?.name || '—';
 /* ================= ЗАПИСЬ ================= */
 const rec = { client:null, svcs:new Set(), q:'', date:null, time:null };
 const pad2 = n => String(n).padStart(2,'0');
-const SLOTS = []; for(let m=8*60; m<=21*60+30; m+=30) SLOTS.push(pad2(Math.floor(m/60))+':'+pad2(m%60));
 const toMin = t => +t.slice(0,2)*60 + +t.slice(3,5);
+const fromMin = m => pad2(Math.floor(m/60))+':'+pad2(m%60);
+const openM = () => toMin(cfg('open_time')), closeM = () => toMin(cfg('close_time')), stepM = () => +cfg('slot_step') || 30;
+const allowPast = () => cfg('allow_past') === true;
 function recDefaults(){
   const now=new Date(), today=dkey(now);
-  if(rec.date && rec.date>=today && rec.time) return;
-  let m = Math.ceil((now.getHours()*60+now.getMinutes())/30)*30;
-  if(m<8*60) m=8*60;
-  if(m>21*60+30){ const t=new Date(now.getTime()+864e5); rec.date=dkey(t); rec.time='09:00'; }
-  else { rec.date=today; rec.time=pad2(Math.floor(m/60))+':'+pad2(m%60); }
+  if(rec.date && (allowPast() || rec.date>=today) && rec.time) return;
+  let m = Math.ceil((now.getHours()*60+now.getMinutes())/stepM())*stepM();
+  if(m<openM()) m=openM();
+  if(m>closeM()){ rec.date=dkey(new Date(now.getTime()+864e5)); rec.time=cfg('open_time'); }
+  else { rec.date=today; rec.time=fromMin(m); }
 }
 function slotsHtml(){
-  const now=new Date(), isToday=rec.date===dkey(now), nowM=now.getHours()*60+now.getMinutes();
+  const now=new Date(), isToday=rec.date===dkey(now), nowM=now.getHours()*60+now.getMinutes(), st=stepM();
   const day=S.data.bookings.filter(b=>b.status!=='cancelled' && dkey(b.starts_at)===rec.date);
-  return SLOTS.map(t=>{
-    const m=toMin(t), n=day.filter(b=>{ const d=new Date(b.starts_at), bm=d.getHours()*60+d.getMinutes(); return bm>=m && bm<m+30; }).length;
-    const past = isToday && m+30<=nowM;
-    return `<button type="button" class="slot${rec.time===t?' on':''}${n?' busy':''}" data-act="recSlot" data-t="${t}"${past?' disabled':''}>${t}${n?`<small>занято: ${n}</small>`:''}</button>`;
-  }).join('');
+  const out=[]; for(let m=openM(); m<=closeM(); m+=st){
+    const t=fromMin(m), n=day.filter(b=>{ const d=new Date(b.starts_at), bm=d.getHours()*60+d.getMinutes(); return bm>=m && bm<m+st; }).length;
+    const past = !allowPast() && isToday && m+st<=nowM;
+    out.push(`<button type="button" class="slot${rec.time===t?' on':''}${n?' busy':''}" data-act="recSlot" data-t="${t}"${past?' disabled':''}>${t}${n?`<small>занято: ${n}</small>`:''}</button>`);
+  }
+  return out.join('');
 }
+const dayKey = off => dkey(new Date(Date.now()+off*864e5));
+const dayBtns = () => [...(allowPast()?[[-1,'Вчера']]:[]),[0,'Сегодня'],[1,'Завтра']].map(([d,l])=>`<button type="button" class="${rec.date===dayKey(d)?'on':''}" data-act="recDay" data-d="${d}">${l}</button>`).join('');
 function whenBlock(){
-  recDefaults(); const today=dkey(new Date()), tm=dkey(new Date(Date.now()+864e5));
-  return `<div class="field"><span>Дата</span><div class="row"><div class="seg" id="recdays">${dayBtns(today,tm)}</div>
-    <input type="date" id="recdate" value="${rec.date}" min="${today}" data-change="recDate" style="width:auto"></div></div>
+  recDefaults(); const today=dkey(new Date());
+  return `<div class="field"><span>Дата</span><div class="row"><div class="seg" id="recdays">${dayBtns()}</div>
+    <input type="date" id="recdate" value="${rec.date}"${allowPast()?'':` min="${today}"`} data-change="recDate" style="width:auto"></div></div>
   <div class="field"><span>Время <b id="rectime" class="num" style="color:var(--text)">${rec.time||''}</b></span><div class="slots" id="slots">${slotsHtml()}</div>
     <div class="row" style="margin-top:8px"><button type="button" class="btn sm" data-act="recNow">Сейчас</button><label class="muted small" style="display:flex;align-items:center;gap:8px">или своё время <input type="time" step="300" id="rectcustom" data-change="recTime" style="width:auto;min-height:36px"></label></div></div>`;
 }
-const dayBtns = (today,tm) => `<button type="button" class="${rec.date===today?'on':''}" data-act="recDay" data-d="0">Сегодня</button><button type="button" class="${rec.date===tm?'on':''}" data-act="recDay" data-d="1">Завтра</button>`;
 function refreshWhen(){
-  const today=dkey(new Date()), tm=dkey(new Date(Date.now()+864e5));
-  const a=$('#recdays'); if(a) a.innerHTML=dayBtns(today,tm);
+  const a=$('#recdays'); if(a) a.innerHTML=dayBtns();
   const d=$('#recdate'); if(d) d.value=rec.date; const s=$('#slots'); if(s) s.innerHTML=slotsHtml(); const t=$('#rectime'); if(t) t.textContent=rec.time||'';
 }
 const recView = {
@@ -172,13 +176,38 @@ const suppliesView = {
   after(){ document.querySelectorAll('[data-count]').forEach(el=>countUp(el,+el.dataset.count)); }
 };
 
-export const views = { dashboard:dashboardView, supplies:suppliesView, record:recView, bookings:bookingsView, clients:clientsView, services:servicesView, staff:staffView, analytics:analyticsView, actions:{} };
+/* ================= НАСТРОЙКИ ================= */
+const settingsView = {
+  html(){
+    const sel = (k,opts) => `<select data-change="setCfg" data-key="${k}">${opts.map(o=>`<option value="${o}"${String(cfg(k))===String(o)?' selected':''}>${o}${k==='slot_step'?' мин':''}</option>`).join('')}</select>`;
+    return `<div class="head"><h2>Настройки</h2></div>
+    ${S.data._settingsMissing?`<div class="card" style="margin-bottom:14px;border-color:var(--warn)"><b>Настройки ещё не подключены к базе.</b><p class="muted small" style="margin-top:6px">Откройте в репозитории файл <code>supabase/settings.sql</code>, вставьте в Supabase → SQL Editor и нажмите Run. Затем обновите страницу.</p></div>`:''}
+    <div class="card" style="max-width:660px"><h3>Запись клиентов</h3>
+      <label class="check"><input type="checkbox" data-change="setCfg" data-key="allow_past"${allowPast()?' checked':''}><span>Разрешить запись на прошедшие даты</span></label>
+      <p class="muted small" style="margin:2px 0 14px 31px">Когда включено, при записи появляется кнопка «Вчера», доступны любые прошлые даты и время. Действует для всех сотрудников.</p>
+      <div class="f2"><label class="field"><span>Начало работы</span><input type="time" data-change="setCfg" data-key="open_time" value="${cfg('open_time')}"></label>
+      <label class="field"><span>Конец (последняя запись)</span><input type="time" data-change="setCfg" data-key="close_time" value="${cfg('close_time')}"></label></div>
+      <label class="field"><span>Шаг времени в записи</span>${sel('slot_step',[15,30,60])}</label>
+    </div>`;
+  }
+};
+
+export const views = { dashboard:dashboardView, supplies:suppliesView, settings:settingsView, record:recView, bookings:bookingsView, clients:clientsView, services:servicesView, staff:staffView, analytics:analyticsView, actions:{} };
 const A = views.actions;
 registerActions(A);
 
 /* ---------- действия ---------- */
-A.recDay = el => { const d=new Date(); d.setDate(d.getDate()+ +el.dataset.d); rec.date=dkey(d); if(rec.date===dkey(new Date()) && rec.time && toMin(rec.time)+30<=new Date().getHours()*60+new Date().getMinutes()) { rec.time=null; } refreshWhen(); };
-A.recDate = el => { if(!el.value) return; rec.date=el.value; refreshWhen(); };
+A.recDay = el => { rec.date=dayKey(+el.dataset.d); if(!allowPast() && rec.date===dkey(new Date()) && rec.time && toMin(rec.time)+stepM()<=new Date().getHours()*60+new Date().getMinutes()) rec.time=null; refreshWhen(); };
+A.recDate = el => { if(!el.value) return; if(!allowPast() && el.value<dkey(new Date())){ el.value=rec.date; throw new Error('Запись на прошедшие даты отключена. Администратор может включить её в «Настройки»'); } rec.date=el.value; refreshWhen(); };
+A.setCfg = async el => {
+  const key=el.dataset.key; let value = el.type==='checkbox' ? el.checked : key==='slot_step' ? +el.value : el.value;
+  if(!value && el.type!=='checkbox') return;
+  const o = key==='open_time'?value:cfg('open_time'), c = key==='close_time'?value:cfg('close_time');
+  if(toMin(c) <= toMin(o)){ S.render(); throw new Error('Конец работы должен быть позже начала'); }
+  await db.upsert('settings',{key,value},'key');
+  const r=S.data.settings.find(x=>x.key===key); r?r.value=value:S.data.settings.push({key,value});
+  rec.time=null; toast('Настройка сохранена ✓'); S.render();
+};
 A.recSlot = el => { rec.time=el.dataset.t; const c=$('#rectcustom'); if(c) c.value=''; refreshWhen(); };
 A.recNow = () => { const n=new Date(); rec.date=dkey(n); rec.time=pad2(n.getHours())+':'+pad2(n.getMinutes()); refreshWhen(); };
 A.recTime = el => { if(el.value){ rec.time=el.value; refreshWhen(); } };
@@ -206,6 +235,7 @@ A.saveBooking = async f => {
   if(digits(phone).length!==11) throw new Error('Введите номер полностью: +7 (900) 000-00-00');
   if(!rec.svcs.size) throw new Error('Выберите хотя бы одну услугу');
   if(!rec.date || !rec.time) throw new Error('Выберите дату и время');
+  if(!allowPast() && new Date(`${rec.date}T${rec.time}`) < new Date(Date.now()-stepM()*6e4)) throw new Error('Это время уже прошло. Запись задним числом отключена в «Настройки».');
   let client = rec.client || S.data.clients.find(c=>digits(c.phone)===digits(phone));
   if(!client){ client = await db.insert('clients',{name,phone,car}); S.data.clients.push(client); }
   else if(client.car!==car && car){ await db.update('clients',client.id,{car}); client.car=car; }
