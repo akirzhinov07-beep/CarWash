@@ -4,8 +4,8 @@ import { SUPABASE_URL, SUPABASE_KEY, LOGIN_DOMAIN } from './config.js';
 export const DEMO = new URLSearchParams(location.search).has('demo');
 let sb = null;
 
-const T = ['clients','services','staff','bookings','orders','staff_pay','supplies'];
-const ADMIN_ONLY = ['orders','staff_pay','supplies'];
+const T = ['clients','services','staff','bookings','orders','staff_pay','supplies','profiles'];
+const ADMIN_ONLY = ['orders','staff_pay','supplies','profiles'];
 
 async function supa(){
   if(sb) return sb;
@@ -31,6 +31,8 @@ function demoLoad(){
 }
 let demo = DEMO ? demoLoad() : null;
 if(demo && !demo.supplies) demo.supplies = [];
+if(demo && !demo.profiles) demo.profiles = [{id:'admin',full_name:'admin',role:'admin',staff_id:null}];
+if(demo && !demo.creds) demo.creds = {};
 const demoSave = () => localStorage.setItem(LS, JSON.stringify(demo));
 
 /* ---------- публичный API ---------- */
@@ -45,6 +47,7 @@ export const db = {
     if(DEMO){
       const l = login.trim().toLowerCase();
       if((l==='admin'||l==='staff') && pass===l){ demo.user={id:l,name:l,role:l}; demoSave(); return demo.user; }
+      if(demo.creds[l] && demo.creds[l]===pass){ demo.user={id:l,name:l,role:'staff'}; demoSave(); return demo.user; }
       throw new Error('Неверный логин или пароль');
     }
     const c = await supa();
@@ -74,6 +77,25 @@ export const db = {
       out[n] = data;
     }));
     return fill(out);
+  },
+  async list(table){
+    if(DEMO) return [...demo[table]];
+    const c = await supa(); const { data, error } = await c.from(table).select('*');
+    if(error) throw new Error(error.message); return data;
+  },
+  async rpc(name, args){
+    if(DEMO){
+      const l = String(args.p_login||'').toLowerCase();
+      if(name==='admin_create_login'){
+        if(demo.creds[l]) throw new Error('Такой логин уже существует');
+        if(String(args.p_password).length<8) throw new Error('Пароль должен быть не короче 8 символов');
+        demo.creds[l]=args.p_password; demo.profiles.push({id:'u'+(++demo.seq),full_name:l,role:'staff',staff_id:args.p_staff_id});
+      } else if(name==='admin_set_password'){ if(!demo.creds[l]) throw new Error('Логин не найден'); demo.creds[l]=args.p_password; }
+      else if(name==='admin_delete_login'){ delete demo.creds[l]; demo.profiles=demo.profiles.filter(p=>p.full_name!==l); }
+      demoSave(); return;
+    }
+    const c = await supa(); const { error } = await c.rpc(name, args);
+    if(error) throw new Error(error.message);
   },
   async insert(table, row, returning=true){
     if(DEMO){ const r={...(table==='bookings'?{status:'pending',pay_type:null}:{}),...row,id:++demo.seq,created_at:row.created_at||new Date().toISOString()}; demo[table].push(r); demoSave(); return r; }

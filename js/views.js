@@ -101,10 +101,12 @@ const servicesView = {
 };
 const staffView = {
   html(){ return `<div class="head"><h2>Сотрудники</h2><button class="btn primary" data-act="editStaff" data-id="">+ Сотрудник</button></div>
-    <div class="tablewrap"><table><thead><tr><th>Имя</th><th>Должность</th><th>Телефон</th><th class="right">% от заказа</th><th>Статус</th><th></th></tr></thead><tbody>
+    <div class="tablewrap"><table><thead><tr><th>Имя</th><th>Должность</th><th>Телефон</th><th class="right">% от заказа</th><th>Доступ в систему</th><th>Статус</th><th></th></tr></thead><tbody>
     ${S.data.staff.map(s=>`<tr><td><b>${esc(s.name)}</b></td><td>${esc(s.position||'')}</td><td>${esc(s.phone||'')}</td><td class="right num">${pay(s.id)}%</td>
+    <td>${loginOf(s.id)?`<span class="pill p-ok">🔑 ${esc(loginOf(s.id).full_name)}</span>`:'<span class="pill p-warn">Нет входа</span>'}</td>
     <td><span class="pill ${s.active?'p-ok':'p-warn'}">${s.active?'Работает':'Не работает'}</span></td><td class="right"><button class="btn sm" data-act="editStaff" data-id="${s.id}">Изменить</button></td></tr>`).join('')}</tbody></table></div>`; }
 };
+export const loginOf = id => (S.data.profiles||[]).find(p=>p.staff_id===id);
 export const pay = id => S.data.staff_pay.find(p=>p.staff_id===id)?.percent ?? 0;
 
 /* ================= РАСХОДНИКИ ================= */
@@ -244,7 +246,44 @@ A.editStaff = el => { const s=S.data.staff.find(x=>x.id===+el.dataset.id);
   <div class="f2"><label class="field"><span>Должность</span><input name="position" value="${esc(s?.position)}"></label><label class="field"><span>Телефон</span><input name="phone" type="tel" inputmode="tel" placeholder="+7 (900) 000-00-00" data-phone value="${esc(s?.phone?maskPhone(s.phone):'')}"></label></div>
   <div class="f2"><label class="field"><span>% от заказа</span><input name="percent" type="number" min="0" max="100" value="${s?pay(s.id):30}" required></label>
   <label class="field"><span>Статус</span><select name="active"><option value="1"${s?.active!==false?' selected':''}>Работает</option><option value="0"${s?.active===false?' selected':''}>Не работает</option></select></label></div>
-  <div class="actions">${s?`<button type="button" class="btn danger" data-act="delStaff" data-id="${s.id}">Удалить</button>`:''}<button type="button" class="btn" data-act="closeModal">Отмена</button><button class="btn primary">Сохранить</button></div></form>`); };
+  <div class="actions">${s?`<button type="button" class="btn danger" data-act="delStaff" data-id="${s.id}">Удалить</button>`:''}<button type="button" class="btn" data-act="closeModal">Отмена</button><button class="btn primary">Сохранить</button></div></form>
+  ${s?`<div class="accessbox"><div><b>Доступ в систему</b><div class="muted small">${loginOf(s.id)?`Логин: <b>${esc(loginOf(s.id).full_name)}</b>`:'У сотрудника пока нет логина и пароля'}</div></div>
+  <button type="button" class="btn sm" data-act="openAccess" data-id="${s.id}">${loginOf(s.id)?'Управлять':'Выдать доступ'}</button></div>`:'<p class="muted small" style="margin-top:14px">Сначала сохраните сотрудника, потом откройте его снова и выдайте доступ.</p>'}`); };
+const RU = {а:'a',б:'b',в:'v',г:'g',д:'d',е:'e',ё:'e',ж:'zh',з:'z',и:'i',й:'y',к:'k',л:'l',м:'m',н:'n',о:'o',п:'p',р:'r',с:'s',т:'t',у:'u',ф:'f',х:'h',ц:'ts',ч:'ch',ш:'sh',щ:'sch',ъ:'',ы:'y',ь:'',э:'e',ю:'yu',я:'ya'};
+const translit = t => String(t||'').toLowerCase().split(' ')[0].replace(/[а-яё]/g,c=>RU[c]).replace(/[^a-z0-9._-]/g,'');
+const genPass = () => { const ch='abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789', a=new Uint32Array(10); crypto.getRandomValues(a); return [...a].map(n=>ch[n%ch.length]).join(''); };
+const siteUrl = () => location.href.split('?')[0].split('#')[0].replace(/index\.html$/,'');
+function accessModal(id){
+  const s=S.data.staff.find(x=>x.id===id), p=loginOf(id);
+  return p ? modal(`<h3>Доступ: ${esc(s.name)}</h3><p class="muted">Логин: <b>${esc(p.full_name)}</b></p>
+    <form data-form="changePass" data-id="${id}" data-login="${esc(p.full_name)}"><label class="field"><span>Новый пароль (не короче 8 символов)</span><input name="pass" value="${genPass()}" required minlength="8" autocapitalize="none" autocorrect="off" spellcheck="false"></label>
+    <div class="actions"><button type="button" class="btn danger" data-act="delLogin" data-id="${id}" data-login="${esc(p.full_name)}">Отключить доступ</button><button type="button" class="btn" data-act="closeModal">Закрыть</button><button class="btn primary">Сменить пароль</button></div></form>`)
+  : modal(`<h3>Выдать доступ: ${esc(s.name)}</h3><p class="muted small">Сотрудник сможет вводить клиентов, записывать и менять статусы. Выручку, зарплаты и расходники он не увидит.</p>
+    <form data-form="createLogin" data-id="${id}"><label class="field"><span>Логин (латиницей)</span><input name="login" value="${esc(translit(s.name))}" required pattern="[a-z0-9._\-]{3,30}" autocapitalize="none" autocorrect="off" spellcheck="false"></label>
+    <label class="field"><span>Пароль (можно изменить)</span><input name="pass" value="${genPass()}" required minlength="8" autocapitalize="none" autocorrect="off" spellcheck="false"></label>
+    <div class="actions"><button type="button" class="btn" data-act="closeModal">Отмена</button><button class="btn primary">Создать доступ</button></div></form>`);
+}
+function credsModal(login, pass, changed){
+  const text = `Сайт: ${siteUrl()}\nЛогин: ${login}\nПароль: ${pass}`;
+  modal(`<h3>${changed?'Пароль изменён':'Доступ выдан'}</h3><p class="muted small">Передайте сотруднику. Пароль виден только сейчас — потом его можно только заменить на новый.</p>
+    <div class="creds"><div><span>Сайт</span><b>${esc(siteUrl())}</b></div><div><span>Логин</span><b>${esc(login)}</b></div><div><span>Пароль</span><b>${esc(pass)}</b></div></div>
+    <div class="actions"><button type="button" class="btn primary" data-act="copyCreds" data-text="${esc(text)}">Скопировать</button><button type="button" class="btn" data-act="closeModal">Готово</button></div>`);
+}
+A.openAccess = el => { el.closest('.overlay').remove(); accessModal(+el.dataset.id); };
+A.createLogin = async f => {
+  const id=+f.dataset.id, login=f.login.value.trim().toLowerCase(), pass=f.pass.value;
+  await db.rpc('admin_create_login',{p_login:login,p_password:pass,p_staff_id:id});
+  S.data.profiles = await db.list('profiles'); f.closest('.overlay').remove(); credsModal(login,pass,false);
+};
+A.changePass = async f => { const login=f.dataset.login, pass=f.pass.value; await db.rpc('admin_set_password',{p_login:login,p_password:pass}); f.closest('.overlay').remove(); credsModal(login,pass,true); };
+A.delLogin = async el => {
+  if(!confirm(`Отключить вход «${el.dataset.login}»? Сотрудник больше не сможет войти. Сам сотрудник и его история останутся.`)) return;
+  await db.rpc('admin_delete_login',{p_login:el.dataset.login}); S.data.profiles = await db.list('profiles'); el.closest('.overlay').remove(); toast('Доступ отключён'); S.render();
+};
+A.copyCreds = async el => {
+  try{ await navigator.clipboard.writeText(el.dataset.text); toast('Скопировано'); }
+  catch{ const t=document.createElement('textarea'); t.value=el.dataset.text; document.body.append(t); t.select(); document.execCommand('copy'); t.remove(); toast('Скопировано'); }
+};
 A.delStaff = async el => {
   const id=+el.dataset.id, s=S.data.staff.find(x=>x.id===id);
   if(!confirm(`Удалить сотрудника «${s.name}» навсегда?\n\nВ старых заказах он станет «Не указан», а его процент пропадёт из расчёта зарплат в аналитике. Если он просто уволился, лучше поставить статус «Не работает».`)) return;

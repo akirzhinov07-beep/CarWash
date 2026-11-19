@@ -175,3 +175,7 @@ tbody tr:nth-child(5){animation-delay:.12s}tbody tr:nth-child(6){animation-delay
 @media (max-width:900px){.head{top:58px}}
 .toasts{pointer-events:none}
 td.num,td.right{white-space:nowrap}
+
+.accessbox{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:18px;padding:14px;border:1px dashed var(--line);border-radius:12px;background:var(--surface2)}
+.creds{display:grid;gap:8px;margin-top:12px;padding:14px;border-radius:12px;background:var(--surface2);border:1px solid var(--line)}
+.creds div{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}.creds span{color:var(--muted)}.creds b{font-family:ui-monospace,Menlo,monospace;word-break:break-all}
