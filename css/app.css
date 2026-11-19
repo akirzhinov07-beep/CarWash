@@ -179,3 +179,29 @@ td.num,td.right{white-space:nowrap}
 .accessbox{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:18px;padding:14px;border:1px dashed var(--line);border-radius:12px;background:var(--surface2)}
 .creds{display:grid;gap:8px;margin-top:12px;padding:14px;border-radius:12px;background:var(--surface2);border:1px solid var(--line)}
 .creds div{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}.creds span{color:var(--muted)}.creds b{font-family:ui-monospace,Menlo,monospace;word-break:break-all}
+
+a.homelink{color:inherit;text-decoration:none;cursor:pointer;-webkit-tap-highlight-color:transparent}
+a.homelink:active{opacity:.7}
+.login-card a.homelink{pointer-events:none}
+
+/* v4: мобильная версия */
+.mcards{display:none}
+.mcard{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px;display:grid;gap:6px;box-shadow:var(--shadow);animation:rise .35s var(--ease) both}
+.mrow{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.mcard a{color:var(--brand);text-decoration:none;font-weight:600}
+@media (max-width:900px){
+  .side{height:auto;overflow:visible}
+  .side .brand,.side .logo{display:none}
+  .topbar .brand{border:0;margin:0;padding:0}
+}
+@media (max-width:700px){
+  .dtonly{display:none}.mcards{display:grid;gap:10px}
+  .main{padding:16px 14px 100px}
+  .head{align-items:center}.head .btn{min-height:40px}
+  .kpi b{font-size:24px}
+  .chartbox{height:230px}
+  .modal{padding:20px;border-radius:16px}
+  th,td{white-space:nowrap}
+  .tablewrap{-webkit-overflow-scrolling:touch}
+}
+@media (max-width:480px){.g4{grid-template-columns:1fr 1fr!important;gap:10px}.g4 .kpi b{font-size:20px}.g4 .card{padding:14px}.g3{grid-template-columns:1fr!important}}

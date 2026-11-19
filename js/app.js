@@ -1,7 +1,7 @@
 import { db, DEMO } from './db.js';
 import { views, NAV } from './views.js';
 import { S, $, toast, esc, icon, maskPhone } from './core.js';
-const brand = `<div class="brand"><b>Бумеранг</b><span>${icon('pin')}Атажукина 2Б</span></div>`;
+const brand = `<a class="brand homelink" href="./" data-act="home" aria-label="На главную"><b>Бумеранг</b><span>${icon('pin')}Атажукина 2Б</span></a>`;
 
 const root = document.getElementById('root');
 
@@ -27,7 +27,7 @@ function loginScreen(msg=''){
 async function boot(){
   const allowed = NAV.filter(n => n.roles.includes(S.user.role));
   S.tab = allowed[0].id;
-  root.innerHTML = `<div class="shell"><aside class="side">${brand}<div class="logo"><i>${icon('drop')}</i>CarwasH</div>
+  root.innerHTML = `<div class="shell"><aside class="side">${brand}<a class="logo homelink" href="./" data-act="home" aria-label="На главную"><i>${icon('drop')}</i>CarwasH</a>
     <nav class="nav" id="nav">${allowed.map(n=>`<button data-tab="${n.id}">${icon(n.icon)}<span>${n.title}</span></button>`).join('')}</nav>
     <div class="me"><div><b>${esc(S.user.name)}</b><br><span class="role">${S.user.role==='admin'?'Администратор':'Сотрудник'}</span></div>
     <button class="btn sm" id="out">Выйти</button></div></aside>
@@ -48,11 +48,13 @@ export function render(){
   window.scrollTo({top:0});
 }
 S.render = render;
+views.actions.home = () => { const first = NAV.find(n => n.roles.includes(S.user.role)); S.tab = first.id; render(); };
 
 // делегирование событий
 document.addEventListener('click', async e => {
   const el = e.target.closest('[data-act]'); if(!el) return;
   const fn = views.actions[el.dataset.act]; if(!fn) return;
+  if(el.tagName==='A') e.preventDefault();
   try{ await fn(el, e); }catch(err){ toast(err.message,true); }
 });
 document.addEventListener('input', e => {

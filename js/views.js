@@ -58,20 +58,25 @@ const recView = {
 
 /* ================= ЗАПИСИ ================= */
 const bk = { day: dkey(new Date()) };
+const statusCtl = b => b.status==='pending'
+  ? `<select data-change="setStatus" data-id="${b.id}" style="min-width:150px;width:auto"><option value="pending">Ожидает</option><option value="done">Выполнено</option><option value="cancelled">Отказался</option></select>`
+  : `<span class="pill ${STATUS[b.status][1]}">${STATUS[b.status][0]}</span>${b.pay_type?`<br><span class="muted small">${PAY[b.pay_type]}</span>`:''}`;
 const bookingsView = {
   html(){
     const list = S.data.bookings.filter(b=>dkey(b.starts_at)===bk.day).sort((a,b)=>new Date(a.starts_at)-new Date(b.starts_at));
     return `<div class="head"><h2>Записи</h2><div class="row"><button class="btn sm" data-act="dayShift" data-d="-1">←</button>
       <input type="date" value="${bk.day}" data-change="setDay" style="width:auto"><button class="btn sm" data-act="dayShift" data-d="1">→</button>
       <button class="btn sm" data-act="dayToday">Сегодня</button></div></div>
-    ${list.length? `<div class="tablewrap"><table><thead><tr><th>Время</th><th>Клиент</th><th>Авто</th><th>Услуги</th><th>Сотрудник</th><th class="right">Сумма</th><th>Статус</th></tr></thead><tbody>
+    ${list.length? `<div class="mcards">${list.map(b=>`<div class="mcard"><div class="mrow"><b class="num">${new Date(b.starts_at).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})}</b>${statusCtl(b)}</div>
+      <div><b>${esc(b.client_name)}</b> · <a href="tel:${esc(b.phone)}">${esc(b.phone)}</a></div><div>${esc(b.car)}</div>
+      <div class="muted small">${(b.services||[]).map(s=>esc(s.name)).join(', ')}${b.comment?` · 💬 ${esc(b.comment)}`:''}</div>
+      <div class="mrow"><span class="muted small">${staffName(b.staff_id)}</span><b class="num">${money(b.total)}</b></div></div>`).join('')}</div>
+    <div class="tablewrap dtonly"><table><thead><tr><th>Время</th><th>Клиент</th><th>Авто</th><th>Услуги</th><th>Сотрудник</th><th class="right">Сумма</th><th>Статус</th></tr></thead><tbody>
     ${list.map(b=>`<tr><td class="num">${new Date(b.starts_at).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})}</td>
       <td><b>${esc(b.client_name)}</b><br><span class="muted small">${esc(b.phone)}</span>${b.comment?`<br><span class="muted small">💬 ${esc(b.comment)}</span>`:''}</td>
       <td>${esc(b.car)}</td><td>${(b.services||[]).map(s=>esc(s.name)).join(', ')}</td><td>${staffName(b.staff_id)}</td>
       <td class="right num">${money(b.total)}</td>
-      <td>${b.status==='pending'
-        ? `<select data-change="setStatus" data-id="${b.id}" style="min-width:150px"><option value="pending">Ожидает</option><option value="done">Выполнено</option><option value="cancelled">Отказался</option></select>`
-        : `<span class="pill ${STATUS[b.status][1]}">${STATUS[b.status][0]}</span>${b.pay_type?`<br><span class="muted small">${PAY[b.pay_type]}</span>`:''}`}</td></tr>`).join('')}
+      <td>${statusCtl(b)}</td></tr>`).join('')}
     </tbody></table></div>` : `<div class="card empty">На этот день записей нет</div>`}`;
   }
 };
@@ -86,10 +91,17 @@ function clientRows(){
     ${isAdmin()?`<td class="num">${n}</td><td class="num">${money(sum)}</td><td class="right"><button class="btn sm" data-act="editClient" data-id="${c.id}">Изменить</button></td>`:''}</tr>`; }).join('')
     : `<tr><td colspan="7" class="empty">Никого не найдено</td></tr>`;
 }
+function clientCards(){
+  const q = cl.q.trim().toLowerCase(), qd = digits(cl.q);
+  const list = S.data.clients.filter(c => !q || c.name.toLowerCase().includes(q) || (qd && digits(c.phone).includes(qd)) || (c.car||'').toLowerCase().includes(q)).slice().reverse();
+  return list.length ? list.map(c=>`<div class="mcard"><div class="mrow"><b>${esc(c.name)}</b>${isAdmin()?`<button class="btn sm" data-act="editClient" data-id="${c.id}">Изменить</button>`:''}</div>
+    <div><a href="tel:${esc(c.phone)}">${esc(c.phone)}</a></div><div>${esc(c.car||'—')}</div>${c.note?`<div class="muted small">${esc(c.note)}</div>`:''}</div>`).join('') : '<div class="card empty">Никого не найдено</div>';
+}
 const clientsView = {
   html(){ return `<div class="head"><h2>Клиенты</h2><button class="btn primary" data-act="newClient">+ Новый клиент</button></div>
     <input data-input="clSearch" placeholder="Поиск по ФИО, телефону или авто" value="${esc(cl.q)}" style="margin-bottom:14px;max-width:460px">
-    <div class="tablewrap"><table><thead><tr><th>Клиент</th><th>Телефон</th><th>Авто</th><th>Заметка</th>${isAdmin()?'<th>Визитов</th><th>Потрачено</th><th></th>':''}</tr></thead><tbody id="clrows">${clientRows()}</tbody></table></div>`; }
+    <div class="mcards" id="clcards">${clientCards()}</div>
+    <div class="tablewrap dtonly"><table><thead><tr><th>Клиент</th><th>Телефон</th><th>Авто</th><th>Заметка</th>${isAdmin()?'<th>Визитов</th><th>Потрачено</th><th></th>':''}</tr></thead><tbody id="clrows">${clientRows()}</tbody></table></div>`; }
 };
 
 /* ================= УСЛУГИ / СОТРУДНИКИ ================= */
@@ -186,7 +198,7 @@ A.payDone = async f => {
   if(isAdmin()) S.data.orders.push(await db.insert('orders',o)); else await db.insert('orders',o,false);
   f.closest('.overlay').remove(); toast('Заказ выполнен ✓'); S.render();
 };
-A.clSearch = el => { cl.q=el.value; $('#clrows').innerHTML=clientRows(); };
+A.clSearch = el => { cl.q=el.value; $('#clrows').innerHTML=clientRows(); const m=$('#clcards'); if(m) m.innerHTML=clientCards(); };
 const clientForm = c => modal(`<h3>${c?'Клиент':'Новый клиент'}</h3><form data-form="saveClient" data-id="${c?.id||''}">
   <label class="field"><span>ФИО</span><input name="name" value="${esc(c?.name)}" required></label>
   <label class="field"><span>Телефон</span><input name="phone" type="tel" inputmode="tel" placeholder="+7 (900) 000-00-00" data-phone value="${esc(c?.phone?maskPhone(c.phone):'')}" required></label>
