@@ -3,8 +3,22 @@ export const $ = (s, r=document) => r.querySelector(s);
 export const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export const money = n => new Intl.NumberFormat('ru-RU',{maximumFractionDigits:0}).format(Math.round(n||0)) + ' ₽';
 export const dt = iso => new Date(iso).toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
-export const CFG_DEFAULTS = { allow_past:false, open_time:'08:00', close_time:'21:30', slot_step:30 };
+export const CFG_DEFAULTS = { allow_past:false, open_time:'08:00', close_time:'21:30', slot_step:30, biz_phone:'' };
 export const cfg = k => { const r=(S.data?.settings||[]).find(x=>x.key===k); return r ? r.value : CFG_DEFAULTS[k]; };
+export function freeWindows(date){
+  const tm = t => +t.slice(0,2)*60 + +t.slice(3,5), f = m => String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0');
+  const st = +cfg('slot_step') || 30, open = tm(cfg('open_time')), close = tm(cfg('close_time'));
+  const now = new Date(), isToday = date === dkey(now), nowM = now.getHours()*60 + now.getMinutes();
+  const day = (S.data.bookings||[]).filter(b => b.status!=='cancelled' && dkey(b.starts_at)===date);
+  const wins = []; let cur = null;
+  for(let m=open; m<=close; m+=st){
+    const past = isToday && m+st<=nowM;
+    const busy = day.some(b => { const d=new Date(b.starts_at), bm=d.getHours()*60+d.getMinutes(); return bm>=m && bm<m+st; });
+    if(!past && !busy){ if(cur) cur.to = m+st; else cur = {from:m, to:m+st}; } else if(cur){ wins.push(cur); cur = null; }
+  }
+  if(cur) wins.push(cur);
+  return wins.map(w => ({ from:f(w.from), to:f(Math.min(w.to, close+st)), mins:w.to-w.from }));
+}
 export function maskPhone(v){
   let d = String(v||'').replace(/\D/g,''); if(d[0]==='7'||d[0]==='8') d = d.slice(1); d = d.slice(0,10);
   if(!d.length) return '';
@@ -41,6 +55,7 @@ const P = {
   pin:'<path d="M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/>',
   box:'<path d="M21 8l-9-5-9 5v8l9 5 9-5V8z"/><path d="M3 8l9 5 9-5M12 13v8"/>',
   gear:'<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
+  chat:'<path d="M21 11.5a8.5 8.5 0 0 1-12.3 7.6L3 21l1.9-5.5A8.5 8.5 0 1 1 21 11.5z"/><path d="M8.5 11.5h.01M12 11.5h.01M15.5 11.5h.01"/>',
   chart:'<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>', home:'<path d="M3 11l9-8 9 8v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>'
 };
 export const icon = n => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${P[n]||''}</svg>`;

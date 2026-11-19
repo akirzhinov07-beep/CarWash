@@ -1,5 +1,5 @@
 import { db } from './db.js';
-import { S, $, esc, money, dt, dkey, localInput, toast, modal, countUp, icon, maskPhone, cfg } from './core.js';
+import { S, $, esc, money, dt, dkey, localInput, toast, modal, countUp, icon, maskPhone, cfg, freeWindows } from './core.js';
 const CATS = ['Мойка','Детейлинг','Химчистка','Полировка','Защита','Прочее'];
 const catRank = c => { const i = CATS.indexOf(c); return i<0 ? 99 : i; };
 import { analyticsView, dashboardView, registerActions } from './analytics.js';
@@ -17,6 +17,8 @@ export const NAV = [
 ];
 const digits = p => String(p||'').replace(/\D/g,'').replace(/^8(?=\d{10}$)/,'7');
 const isAdmin = () => S.user.role==='admin';
+const hasMk = () => !S.data.clients.length || 'marketing_ok' in S.data.clients[0];
+const waLink = (phone,text='') => digits(phone).length===11 ? `<a class="waicon" title="Написать в WhatsApp" aria-label="WhatsApp" href="https://wa.me/${digits(phone)}${text?'?text='+encodeURIComponent(text):''}" target="_blank" rel="noopener">${icon('chat')}</a>` : '';
 const STATUS = { pending:['Ожидает','p-warn'], done:['Выполнено','p-ok'], cancelled:['Отказался','p-bad'] };
 const PAY = { cash:'Наличными', card:'Безналичная оплата' };
 export const payName = p => PAY[p] || '—';
@@ -73,6 +75,7 @@ const recView = {
         <div class="f2"><label class="field"><span>Имя клиента</span><input name="name" required></label>
         <label class="field"><span>Телефон *</span><input name="phone" type="tel" inputmode="tel" placeholder="+7 (900) 000-00-00" data-phone data-input="recPhone" required></label></div>
         <label class="field"><span>Марка и модель авто *</span><input name="car" placeholder="Toyota Camry" required></label>
+        ${hasMk()?'<label class="check"><input type="checkbox" name="mk"><span class="small">Клиент согласен получать сообщения от мойки (WhatsApp)</span></label>':''}
         ${whenBlock()}
         <div><label class="field"><span>Сотрудник (необязательно)</span><select name="staff"><option value="">Любой</option>${S.data.staff.filter(s=>s.active).map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select></label></div>
         <label class="field"><span>Комментарий</span><textarea name="comment"></textarea></label>
@@ -105,12 +108,12 @@ const bookingsView = {
       <input type="date" value="${bk.day}" data-change="setDay" style="width:auto"><button class="btn sm" data-act="dayShift" data-d="1">→</button>
       <button class="btn sm" data-act="dayToday">Сегодня</button></div></div>
     ${list.length? `<div class="mcards">${list.map(b=>`<div class="mcard"><div class="mrow"><b class="num">${new Date(b.starts_at).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})}</b>${statusCtl(b)}</div>
-      <div><b>${esc(b.client_name)}</b> · <a href="tel:${esc(b.phone)}">${esc(b.phone)}</a></div><div>${esc(b.car)}</div>
+      <div><b>${esc(b.client_name)}</b> · <a href="tel:${esc(b.phone)}">${esc(b.phone)}</a>${waLink(b.phone)}</div><div>${esc(b.car)}</div>
       <div class="muted small">${(b.services||[]).map(s=>esc(s.name)).join(', ')}${b.comment?` · 💬 ${esc(b.comment)}`:''}</div>
       <div class="mrow"><span class="muted small">${staffName(b.staff_id)}</span><b class="num">${money(b.total)}</b></div></div>`).join('')}</div>
     <div class="tablewrap dtonly"><table><thead><tr><th>Время</th><th>Клиент</th><th>Авто</th><th>Услуги</th><th>Сотрудник</th><th class="right">Сумма</th><th>Статус</th></tr></thead><tbody>
     ${list.map(b=>`<tr><td class="num">${new Date(b.starts_at).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})}</td>
-      <td><b>${esc(b.client_name)}</b><br><span class="muted small">${esc(b.phone)}</span>${b.comment?`<br><span class="muted small">💬 ${esc(b.comment)}</span>`:''}</td>
+      <td><b>${esc(b.client_name)}</b><br><span class="muted small">${esc(b.phone)}</span>${waLink(b.phone)}${b.comment?`<br><span class="muted small">💬 ${esc(b.comment)}</span>`:''}</td>
       <td>${esc(b.car)}</td><td>${(b.services||[]).map(s=>esc(s.name)).join(', ')}</td><td>${staffName(b.staff_id)}</td>
       <td class="right num">${money(b.total)}</td>
       <td>${statusCtl(b)}</td></tr>`).join('')}
@@ -124,21 +127,23 @@ function clientRows(){
   const q = cl.q.trim().toLowerCase(), qd = digits(cl.q);
   const list = S.data.clients.filter(c => !q || c.name.toLowerCase().includes(q) || (qd && digits(c.phone).includes(qd)) || (c.car||'').toLowerCase().includes(q)).slice().reverse();
   const stat = c => { const o=S.data.orders.filter(o=>digits(o.phone)===digits(c.phone)); return [o.length,o.reduce((s,x)=>s+x.total,0)]; };
-  return list.length? list.map(c=>{ const [n,sum]=isAdmin()?stat(c):[0,0]; return `<tr><td><b>${esc(c.name)}</b></td><td>${esc(c.phone)}</td><td>${esc(c.car||'—')}</td><td class="muted">${esc(c.note||'')}</td>
+  return list.length? list.map(c=>{ const [n,sum]=isAdmin()?stat(c):[0,0]; return `<tr><td><b>${esc(c.name)}</b></td><td>${esc(c.phone)}${waLink(c.phone)}</td><td>${esc(c.car||'—')}</td><td class="muted">${esc(c.note||'')}</td>
+    <td><input type="checkbox" title="Согласие на сообщения" data-change="togConsent" data-id="${c.id}"${c.marketing_ok?' checked':''}${hasMk()?'':' disabled'}></td>
     ${isAdmin()?`<td class="num">${n}</td><td class="num">${money(sum)}</td><td class="right"><button class="btn sm" data-act="editClient" data-id="${c.id}">Изменить</button></td>`:''}</tr>`; }).join('')
-    : `<tr><td colspan="7" class="empty">Никого не найдено</td></tr>`;
+    : `<tr><td colspan="8" class="empty">Никого не найдено</td></tr>`;
 }
 function clientCards(){
   const q = cl.q.trim().toLowerCase(), qd = digits(cl.q);
   const list = S.data.clients.filter(c => !q || c.name.toLowerCase().includes(q) || (qd && digits(c.phone).includes(qd)) || (c.car||'').toLowerCase().includes(q)).slice().reverse();
   return list.length ? list.map(c=>`<div class="mcard"><div class="mrow"><b>${esc(c.name)}</b>${isAdmin()?`<button class="btn sm" data-act="editClient" data-id="${c.id}">Изменить</button>`:''}</div>
-    <div><a href="tel:${esc(c.phone)}">${esc(c.phone)}</a></div><div>${esc(c.car||'—')}</div>${c.note?`<div class="muted small">${esc(c.note)}</div>`:''}</div>`).join('') : '<div class="card empty">Никого не найдено</div>';
+    <div><a href="tel:${esc(c.phone)}">${esc(c.phone)}</a>${waLink(c.phone)}</div><div>${esc(c.car||'—')}</div>
+    <label class="check" style="margin:4px 0"><input type="checkbox" data-change="togConsent" data-id="${c.id}"${c.marketing_ok?' checked':''}${hasMk()?'':' disabled'}><span class="small">Согласен на сообщения</span></label>${c.note?`<div class="muted small">${esc(c.note)}</div>`:''}</div>`).join('') : '<div class="card empty">Никого не найдено</div>';
 }
 const clientsView = {
   html(){ return `<div class="head"><h2>Клиенты</h2><button class="btn primary" data-act="newClient">+ Новый клиент</button></div>
     <input data-input="clSearch" placeholder="Поиск по ФИО, телефону или авто" value="${esc(cl.q)}" style="margin-bottom:14px;max-width:460px">
     <div class="mcards" id="clcards">${clientCards()}</div>
-    <div class="tablewrap dtonly"><table><thead><tr><th>Клиент</th><th>Телефон</th><th>Авто</th><th>Заметка</th>${isAdmin()?'<th>Визитов</th><th>Потрачено</th><th></th>':''}</tr></thead><tbody id="clrows">${clientRows()}</tbody></table></div>`; }
+    <div class="tablewrap dtonly"><table><thead><tr><th>Клиент</th><th>Телефон</th><th>Авто</th><th>Заметка</th><th title="Согласие на сообщения">Рассылка</th>${isAdmin()?'<th>Визитов</th><th>Потрачено</th><th></th>':''}</tr></thead><tbody id="clrows">${clientRows()}</tbody></table></div>`; }
 };
 
 /* ================= УСЛУГИ / СОТРУДНИКИ ================= */
@@ -188,6 +193,9 @@ const settingsView = {
       <div class="f2"><label class="field"><span>Начало работы</span><input type="time" data-change="setCfg" data-key="open_time" value="${cfg('open_time')}"></label>
       <label class="field"><span>Конец (последняя запись)</span><input type="time" data-change="setCfg" data-key="close_time" value="${cfg('close_time')}"></label></div>
       <label class="field"><span>Шаг времени в записи</span>${sel('slot_step',[15,30,60])}</label>
+    </div>
+    <div class="card" style="max-width:660px;margin-top:14px"><h3>Телефон мойки</h3>
+      <label class="field"><span>Указывается в сообщениях клиентам</span><input type="tel" inputmode="tel" placeholder="+7 (900) 000-00-00" data-phone data-change="setCfg" data-key="biz_phone" value="${esc(cfg('biz_phone'))}"></label>
     </div>`;
   }
 };
@@ -201,7 +209,7 @@ A.recDay = el => { rec.date=dayKey(+el.dataset.d); if(!allowPast() && rec.date==
 A.recDate = el => { if(!el.value) return; if(!allowPast() && el.value<dkey(new Date())){ el.value=rec.date; throw new Error('Запись на прошедшие даты отключена. Администратор может включить её в «Настройки»'); } rec.date=el.value; refreshWhen(); };
 A.setCfg = async el => {
   const key=el.dataset.key; let value = el.type==='checkbox' ? el.checked : key==='slot_step' ? +el.value : el.value;
-  if(!value && el.type!=='checkbox') return;
+  if(!value && el.type!=='checkbox' && key!=='biz_phone') return;
   const o = key==='open_time'?value:cfg('open_time'), c = key==='close_time'?value:cfg('close_time');
   if(toMin(c) <= toMin(o)){ S.render(); throw new Error('Конец работы должен быть позже начала'); }
   await db.upsert('settings',{key,value},'key');
@@ -237,7 +245,7 @@ A.saveBooking = async f => {
   if(!rec.date || !rec.time) throw new Error('Выберите дату и время');
   if(!allowPast() && new Date(`${rec.date}T${rec.time}`) < new Date(Date.now()-stepM()*6e4)) throw new Error('Это время уже прошло. Запись задним числом отключена в «Настройки».');
   let client = rec.client || S.data.clients.find(c=>digits(c.phone)===digits(phone));
-  if(!client){ client = await db.insert('clients',{name,phone,car}); S.data.clients.push(client); }
+  if(!client){ client = await db.insert('clients',{name,phone,car,...(hasMk()?{marketing_ok:!!f.mk?.checked}:{})}); S.data.clients.push(client); }
   else if(client.car!==car && car){ await db.update('clients',client.id,{car}); client.car=car; }
   const svcs=[...rec.svcs].map(id=>{const s=bySvc(id);return {id:s.id,name:s.name,category:s.category,price:s.price};});
   const b = await db.insert('bookings',{ client_id:client.id, client_name:name||client.name, phone, car, comment:f.comment.value.trim()||null,
@@ -273,12 +281,13 @@ const clientForm = c => modal(`<h3>${c?'Клиент':'Новый клиент'}
   <label class="field"><span>Телефон</span><input name="phone" type="tel" inputmode="tel" placeholder="+7 (900) 000-00-00" data-phone value="${esc(c?.phone?maskPhone(c.phone):'')}" required></label>
   <label class="field"><span>Авто</span><input name="car" value="${esc(c?.car)}"></label>
   <label class="field"><span>Заметка</span><textarea name="note">${esc(c?.note)}</textarea></label>
+  ${hasMk()?`<label class="check"><input type="checkbox" name="mk"${c?.marketing_ok?' checked':''}><span>Согласен получать сообщения (WhatsApp)</span></label>`:''}
   <div class="actions">${c&&isAdmin()?'<button type="button" class="btn danger" data-act="delClient" data-id="'+c.id+'">Удалить</button>':''}<button type="button" class="btn" data-act="closeModal">Отмена</button><button class="btn primary">Сохранить</button></div></form>`);
 A.newClient = () => clientForm(null);
 A.editClient = el => clientForm(S.data.clients.find(c=>c.id===+el.dataset.id));
 A.saveClient = async f => {
   if(digits(f.phone.value).length!==11) throw new Error('Введите номер полностью: +7 (900) 000-00-00');
-  const row={name:f.name.value.trim(),phone:f.phone.value.trim(),car:f.car.value.trim(),note:f.note.value.trim()}, id=+f.dataset.id;
+  const row={name:f.name.value.trim(),phone:f.phone.value.trim(),car:f.car.value.trim(),note:f.note.value.trim(), ...(hasMk()?{marketing_ok:!!f.mk?.checked}:{})}, id=+f.dataset.id;
   if(id){
     const old={...S.data.clients.find(c=>c.id===id)};
     const r=await db.update('clients',id,row); Object.assign(S.data.clients.find(c=>c.id===id),r);
@@ -391,3 +400,51 @@ A.saveStaff = async f => {
   f.closest('.overlay').remove(); toast('Сохранено ✓'); S.render();
 };
 export { analyticsView };
+
+/* ================= WhatsApp: оповещение о свободных окнах ================= */
+const wa = { day:'today', from:'18:00', to:'21:00', minDays:0, text:'', edited:false, sent:new Set() };
+const waDate = () => { const d=new Date(); if(wa.day==='tomorrow') d.setDate(d.getDate()+1); return dkey(d); };
+const firstName = n => { const p=String(n||'').trim().split(/\s+/); return p.length>1 ? p[1] : p[0]||''; };
+const waAutoText = () => `Здравствуйте, {имя}! Приглашаем вас на мойку «Бумеранг» (Атажукина 2Б) ${wa.day==='today'?'сегодня':'завтра'} с ${wa.from} до ${wa.to}.${cfg('biz_phone')?` Для записи и уточнения свяжитесь с нами по номеру ${cfg('biz_phone')}.`:' Для записи и уточнения свяжитесь с нами.'}`;
+function waRecipients(){
+  const date = waDate(), now = Date.now();
+  const busy = new Set(S.data.bookings.filter(b=>b.status==='pending' && dkey(b.starts_at)===date).map(b=>digits(b.phone)));
+  return S.data.clients.filter(c=>c.marketing_ok===true && digits(c.phone).length===11 && !busy.has(digits(c.phone))).filter(c=>{
+    if(!wa.minDays) return true;
+    const last = Math.max(0,...(S.data.orders||[]).filter(o=>digits(o.phone)===digits(c.phone)).map(o=>+new Date(o.created_at||0)));
+    return !last || (now-last)/864e5 >= wa.minDays;
+  });
+}
+function waBody(){
+  const list = waRecipients(), tpl = wa.edited ? wa.text : waAutoText();
+  const total = S.data.clients.length, consent = S.data.clients.filter(c=>c.marketing_ok===true).length;
+  const wins = freeWindows(waDate());
+  return `${hasMk()?'':'<p class="muted small" style="color:var(--warn)">Чтобы включить согласие клиентов, выполните <code>supabase/marketing.sql</code> в Supabase (см. README).</p>'}
+  <div class="row" style="margin-bottom:10px"><button class="btn sm${wa.day==='today'?' primary':''}" data-act="waDay" data-d="today">Сегодня</button><button class="btn sm${wa.day==='tomorrow'?' primary':''}" data-act="waDay" data-d="tomorrow">Завтра</button>
+  ${wins.map(w=>`<button class="pill p-ok" style="border:0;cursor:pointer" data-act="waWin" data-f="${w.from}" data-t="${w.to}">${w.from}–${w.to}</button>`).join('')}</div>
+  <div class="f2"><label class="field"><span>С</span><input type="time" value="${wa.from}" data-change="waFrom"></label><label class="field"><span>До</span><input type="time" value="${wa.to}" data-change="waTo"></label></div>
+  <label class="field"><span>Текст ({имя} заменится именем клиента)</span><textarea rows="4" data-input="waText">${esc(tpl)}</textarea></label>
+  <label class="field"><span>Только тем, кто не был не менее (дней, 0 — всем)</span><input type="number" min="0" value="${wa.minDays}" data-change="waMin" style="max-width:140px"></label>
+  <p class="muted small">Получатели: <b>${list.length}</b> (согласие есть у ${consent} из ${total}). Тем, кто уже записан на этот день, не пишем.</p>
+  <div id="warows" style="max-height:38vh;overflow:auto">${list.length?list.map(c=>`<div class="warow${wa.sent.has(c.id)?' sent':''}"><span><b>${esc(c.name)}</b> <span class="muted small">${esc(c.phone)}</span></span>
+    <a class="btn wa sm" href="https://wa.me/${digits(c.phone)}?text=${encodeURIComponent(tpl.replaceAll('{имя}',firstName(c.name)))}" target="_blank" rel="noopener" data-act="waSent" data-id="${c.id}">${icon('chat')}${wa.sent.has(c.id)?'Отправлено':'Написать'}</a></div>`).join(''):'<div class="empty">Нет клиентов с согласием на сообщения. Отметьте согласие в разделе «Клиенты».</div>'}</div>
+  <div class="actions"><button class="btn" data-act="closeModal">Закрыть</button></div>`;
+}
+function waRefresh(){ const m=$('#wabox'); if(m) m.innerHTML=waBody(); }
+A.waOpen = () => {
+  const w = freeWindows(waDate()).sort((a,b)=>b.mins-a.mins)[0]; if(w){ wa.from=w.from; wa.to=w.to; }
+  wa.edited=false; wa.sent=new Set();
+  const m = modal(`<h3>Оповестить в WhatsApp</h3><div id="wabox">${waBody()}</div>`); m.firstElementChild.classList.add('wide');
+};
+A.waDay = el => { wa.day=el.dataset.d; const w=freeWindows(waDate()).sort((a,b)=>b.mins-a.mins)[0]; if(w){wa.from=w.from;wa.to=w.to;} waRefresh(); };
+A.waWin = el => { wa.from=el.dataset.f; wa.to=el.dataset.t; waRefresh(); };
+A.waFrom = el => { if(el.value){ wa.from=el.value; waRefresh(); } };
+A.waTo = el => { if(el.value){ wa.to=el.value; waRefresh(); } };
+A.waMin = el => { wa.minDays=Math.max(0,+el.value||0); waRefresh(); };
+A.waText = el => { wa.text=el.value; wa.edited=true; document.querySelectorAll('#warows a.wa').forEach(a=>{ const id=a.dataset.id, c=S.data.clients.find(x=>x.id===+id); a.href=`https://wa.me/${digits(c.phone)}?text=${encodeURIComponent(wa.text.replaceAll('{имя}',firstName(c.name)))}`; }); };
+A.waSent = el => { wa.sent.add(+el.dataset.id); setTimeout(()=>{ const row=el.closest('.warow'); if(row){ row.classList.add('sent'); el.lastChild.textContent='Отправлено'; } },300); };
+A.togConsent = async el => {
+  const c=S.data.clients.find(x=>x.id===+el.dataset.id), v=el.checked;
+  try{ await db.update('clients',c.id,{marketing_ok:v}); c.marketing_ok=v; toast(v?'Согласие отмечено':'Согласие снято'); }
+  catch(e){ el.checked=!v; throw e; }
+};

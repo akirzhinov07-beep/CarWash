@@ -54,7 +54,7 @@ views.actions.home = () => { const first = NAV.find(n => n.roles.includes(S.user
 document.addEventListener('click', async e => {
   const el = e.target.closest('[data-act]'); if(!el) return;
   const fn = views.actions[el.dataset.act]; if(!fn) return;
-  if(el.tagName==='A') e.preventDefault();
+  if(el.tagName==='A' && !el.target) e.preventDefault();
   try{ await fn(el, e); }catch(err){ toast(err.message,true); }
 });
 document.addEventListener('input', e => {

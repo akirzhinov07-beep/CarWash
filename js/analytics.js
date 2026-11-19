@@ -1,4 +1,4 @@
-import { S, $, esc, money, dt, dkey, countUp } from './core.js';
+import { S, $, esc, money, dt, dkey, countUp, freeWindows, icon } from './core.js';
 
 const PAYN = { cash:'Наличными', card:'Безналичная' };
 const pct = id => S.data.staff_pay.find(p=>p.staff_id===id)?.percent ?? 0;
@@ -52,12 +52,16 @@ export const dashboardView = {
     const now=new Date(), today=inRange([day0(now),new Date(day0(now).getTime()+864e5-1)]), mon=inRange([new Date(now.getFullYear(),now.getMonth(),1),now]);
     const pend=S.data.bookings.filter(b=>b.status==='pending'&&dkey(b.starts_at)===dkey(now)).sort((a,b)=>new Date(a.starts_at)-new Date(b.starts_at));
     const t=sum(today), m=sum(mon);
+    const wins = freeWindows(dkey(now));
     return `<div class="head"><h2>Главная</h2><span class="muted">${now.toLocaleDateString('ru-RU',{weekday:'long',day:'numeric',month:'long'})}</span></div>
     <div class="grid g4 stagger">${kpi('Выручка сегодня',t.rev,1)}${kpi('Выручка за месяц',m.rev,1)}
       <div class="card kpi"><span class="lbl">Заказов сегодня</span><b data-count="${t.n}" data-n="1">${t.n}</b></div>
       <div class="card kpi"><span class="lbl">Ждут сегодня</span><b>${pend.length}</b></div></div>
     <div class="grid g-rec" style="margin-top:14px"><div class="card"><h3>Выручка за 14 дней: зарплаты и остальной доход</h3><div class="chartbox"><canvas id="c1"></canvas></div></div>
-    <div class="card"><h3>Ближайшие записи</h3>${pend.length?pend.slice(0,7).map(b=>`<div class="row" style="justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--line)"><span><b>${new Date(b.starts_at).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})}</b> ${esc(b.car)}</span><span class="muted small">${esc(b.client_name)}</span></div>`).join(''):'<div class="empty">На сегодня записей нет</div>'}</div></div>`;
+    <div class="card"><h3>Ближайшие записи</h3>${pend.length?pend.slice(0,7).map(b=>`<div class="row" style="justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--line)"><span><b>${new Date(b.starts_at).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})}</b> ${esc(b.car)}</span><span class="muted small">${esc(b.client_name)}</span></div>`).join(''):'<div class="empty">На сегодня записей нет</div>'}</div></div>
+    <div class="card" style="margin-top:14px"><h3>Свободные окна сегодня</h3>
+      <div class="row" style="justify-content:space-between;align-items:center"><div class="chips">${wins.length?wins.map(w=>`<span class="pill p-ok">${w.from}–${w.to}</span>`).join(''):'<span class="muted">Свободных окон на сегодня нет</span>'}</div>
+      <button class="btn wa" data-act="waOpen">${icon('chat')}Оповестить в WhatsApp</button></div></div>`;
   },
   after(){ kill(); animateKpis(); document.querySelectorAll('[data-n]').forEach(el=>countUp(el,+el.dataset.count,v=>String(Math.round(v))));
     const e=day0(new Date()), s=new Date(e); s.setDate(s.getDate()-13); waitChart(()=>revChart($('#c1'), perDay(inRange([s,new Date(e.getTime()+864e5-1)]),[s,e]))); }
