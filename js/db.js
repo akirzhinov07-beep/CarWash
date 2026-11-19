@@ -47,7 +47,12 @@ export const db = {
     }
     const c = await supa();
     const { data, error } = await c.auth.signInWithPassword({ email: login.trim().toLowerCase()+LOGIN_DOMAIN, password: pass });
-    if(error) throw new Error('Неверный логин или пароль');
+    if(error){
+      const m = (error.message||'').toLowerCase();
+      if(m.includes('not confirmed')) throw new Error('Почта пользователя не подтверждена: в Supabase включите Auto Confirm для этого пользователя');
+      if(m.includes('fetch') || m.includes('network')) throw new Error('Нет связи с базой. Проверьте интернет или VPN');
+      throw new Error('Неверный логин или пароль');
+    }
     return loadProfile(c, data.user);
   },
   async signOut(){ if(DEMO){ demo.user=null; demoSave(); return; } const c=await supa(); await c.auth.signOut(); },

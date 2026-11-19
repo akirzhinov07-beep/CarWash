@@ -9,7 +9,7 @@ function loginScreen(msg=''){
   <div class="login"><form class="login-card" id="lf" autocomplete="on">
     <div class="logo"><i>${icon('drop')}</i>CarwasH</div>
     <h1>Вход в систему</h1><p class="muted small">Введите логин и пароль, выданные администратором</p>
-    <label class="field"><span>Логин</span><input name="login" autocomplete="username" required autofocus></label>
+    <label class="field"><span>Логин</span><input name="login" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" required autofocus></label>
     <label class="field"><span>Пароль</span><input name="pass" type="password" autocomplete="current-password" required></label>
     <div class="err" role="alert">${esc(msg)}</div>
     <button class="btn primary block" type="submit">Войти</button>
