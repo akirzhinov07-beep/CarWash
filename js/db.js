@@ -63,7 +63,8 @@ export const db = {
     if(DEMO){ names.forEach(n => out[n]=[...demo[n]]); return fill(out); }
     const c = await supa();
     await Promise.all(names.map(async n => {
-      const { data, error } = await c.from(n).select('*').order('id',{ascending:true}).limit(5000);
+      let q = c.from(n).select('*'); if(n!=='staff_pay') q = q.order('id',{ascending:true});
+      const { data, error } = await q.limit(5000);
       if(error) throw new Error(error.message);
       out[n] = data;
     }));

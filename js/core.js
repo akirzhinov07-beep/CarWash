@@ -16,7 +16,7 @@ export const dkey = d => { d=new Date(d); return d.getFullYear()+'-'+String(d.ge
 export const localInput = (d=new Date()) => { d=new Date(d); d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return d.toISOString().slice(0,16); };
 export function toast(msg, bad){
   const t = document.createElement('div'); t.className='toast'+(bad?' bad':''); t.textContent=msg;
-  document.getElementById('toasts').append(t); setTimeout(()=>{ t.style.transition='opacity .3s'; t.style.opacity=0; setTimeout(()=>t.remove(),300); }, 3200);
+  document.getElementById('toasts').append(t); setTimeout(()=>{ t.style.transition='opacity .3s'; t.style.opacity=0; setTimeout(()=>t.remove(),300); }, bad?9000:3200);
 }
 export function modal(html){
   const o = document.createElement('div'); o.className='overlay';
