@@ -75,7 +75,7 @@ const recView = {
         <div class="f2"><label class="field"><span>Имя клиента</span><input name="name" required></label>
         <label class="field"><span>Телефон *</span><input name="phone" type="tel" inputmode="tel" placeholder="+7 (900) 000-00-00" data-phone data-input="recPhone" required></label></div>
         <label class="field"><span>Марка и модель авто *</span><input name="car" placeholder="Toyota Camry" required></label>
-        ${hasMk()?'<label class="check"><input type="checkbox" name="mk"><span class="small">Клиент согласен получать сообщения от мойки (WhatsApp)</span></label>':''}
+        ${hasMk()?'<label class="check"><input type="checkbox" name="mk" checked><span class="small">Клиент согласен получать сообщения от мойки (WhatsApp)</span></label>':''}
         ${whenBlock()}
         <div><label class="field"><span>Сотрудник (необязательно)</span><select name="staff"><option value="">Любой</option>${S.data.staff.filter(s=>s.active).map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select></label></div>
         <label class="field"><span>Комментарий</span><textarea name="comment"></textarea></label>
@@ -281,7 +281,7 @@ const clientForm = c => modal(`<h3>${c?'Клиент':'Новый клиент'}
   <label class="field"><span>Телефон</span><input name="phone" type="tel" inputmode="tel" placeholder="+7 (900) 000-00-00" data-phone value="${esc(c?.phone?maskPhone(c.phone):'')}" required></label>
   <label class="field"><span>Авто</span><input name="car" value="${esc(c?.car)}"></label>
   <label class="field"><span>Заметка</span><textarea name="note">${esc(c?.note)}</textarea></label>
-  ${hasMk()?`<label class="check"><input type="checkbox" name="mk"${c?.marketing_ok?' checked':''}><span>Согласен получать сообщения (WhatsApp)</span></label>`:''}
+  ${hasMk()?`<label class="check"><input type="checkbox" name="mk"${(c?c.marketing_ok:true)?' checked':''}><span>Согласен получать сообщения (WhatsApp)</span></label>`:''}
   <div class="actions">${c&&isAdmin()?'<button type="button" class="btn danger" data-act="delClient" data-id="'+c.id+'">Удалить</button>':''}<button type="button" class="btn" data-act="closeModal">Отмена</button><button class="btn primary">Сохранить</button></div></form>`);
 A.newClient = () => clientForm(null);
 A.editClient = el => clientForm(S.data.clients.find(c=>c.id===+el.dataset.id));
