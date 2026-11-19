@@ -44,7 +44,7 @@ function slotsHtml(){
   const out=[]; for(let m=openM(); m<=closeM(); m+=st){
     const t=fromMin(m), n=day.filter(b=>{ const d=new Date(b.starts_at), bm=d.getHours()*60+d.getMinutes(); return bm>=m && bm<m+st; }).length;
     const past = !allowPast() && isToday && m+st<=nowM;
-    out.push(`<button type="button" class="slot${rec.time===t?' on':''}${n?' busy':''}" data-act="recSlot" data-t="${t}"${past?' disabled':''}>${t}${n?`<small>занято: ${n}</small>`:''}</button>`);
+    out.push(`<button type="button" class="slot${rec.time===t?' on':''}${n?' busy':''}" data-act="recSlot" data-t="${t}"${past?' disabled':''}>${t}${n?`<small>записей: ${n}</small>`:''}</button>`);
   }
   return out.join('');
 }
