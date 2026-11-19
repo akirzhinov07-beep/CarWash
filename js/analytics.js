@@ -26,6 +26,7 @@ function perClient(arr){ const m=groupBy(arr,o=>(o.phone||'')+'|'+o.client_name)
 function perDay(arr,[a,b]){ const days=[]; for(let d=new Date(a); d<=b; d.setDate(d.getDate()+1)) days.push(dkey(d));
   const m=groupBy(arr,o=>dkey(o.created_at)); return days.map(k=>{ const t=sum(m.get(k)||[]); return {k,...t}; }); }
 
+const suppliesIn = ([a,b]) => (S.data.supplies||[]).filter(x=>{ const d=new Date(x.bought_at+'T12:00'); return d>=a && d<=b; });
 function kill(){ charts.splice(0).forEach(c=>c.destroy()); }
 function palette(){ return ['--c1','--c2','--c3','--c4','--c5'].map(cssv); }
 function baseOpts(){ const grid=cssv('--line'), tx=cssv('--muted'); return { responsive:true, maintainAspectRatio:false, animation:{duration:matchMedia('(prefers-reduced-motion:reduce)').matches?0:800,easing:'easeOutCubic'},
@@ -67,11 +68,13 @@ function body(){
   const p=period(), arr=inRange(p), t=sum(arr), svc=perService(arr), stf=perStaff(arr), cli=perClient(arr);
   const newCli=S.data.clients.filter(c=>{const d=new Date(c.created_at);return d>=p[0]&&d<=p[1];}).length;
   const cash=arr.filter(o=>o.pay_type==='cash').reduce((s,o)=>s+o.total,0);
+  const supSum=suppliesIn(p).reduce((s,x)=>s+x.qty*x.unit_price,0);
   if(A.tab==='orders') return `<div class="tablewrap"><table><thead><tr><th>Время</th><th>Авто</th><th>Услуги</th><th>Телефон</th><th>Выполнил</th><th>Оплата</th><th class="right">Сумма</th></tr></thead><tbody>
     ${arr.slice().reverse().map(o=>`<tr><td class="num">${dt(o.created_at)}</td><td>${esc(o.car)}</td><td>${(o.services||[]).map(s=>esc(s.name)).join(', ')}</td><td>${esc(o.phone)}</td><td>${esc(sname(o.staff_id))}</td><td>${PAYN[o.pay_type]||''}</td><td class="right num">${money(o.total)}</td></tr>`).join('')||'<tr><td colspan="7" class="empty">Завершённых заказов за период нет</td></tr>'}</tbody></table></div>`;
   const max=Math.max(1,...svc.map(s=>s.rev));
   return `<div class="grid g4 stagger">${kpi('Выручка',t.rev)}${kpi('Зарплаты',t.sal)}${kpi('Остальной доход',t.profit)}${kpi('Средний чек',t.avg)}</div>
   <div class="grid g4 stagger" style="margin-top:14px"><div class="card kpi"><span class="lbl">Заказов</span><b>${t.n}</b></div><div class="card kpi"><span class="lbl">Новых клиентов</span><b>${newCli}</b></div>${kpi('Наличными',cash)}${kpi('Безналичная',t.rev-cash)}</div>
+  <div class="grid g2 stagger" style="margin-top:14px">${kpi('Расходники за период',supSum)}${kpi('Чистая прибыль (остальной доход − расходники)',t.profit-supSum)}</div>
   <div class="grid g-rec" style="margin-top:14px"><div class="card"><h3>Выручка по дням: зарплаты и остальной доход</h3><div class="chartbox"><canvas id="a1"></canvas></div></div>
   <div class="card"><h3>Выручка по услугам</h3><div class="chartbox"><canvas id="a2"></canvas></div></div></div>
   <div class="grid g2" style="margin-top:14px"><div class="card"><h3>Аналитика по услугам</h3>${svc.map(s=>`<div style="margin-bottom:12px"><div class="row" style="justify-content:space-between"><b>${esc(s.name)}</b><span class="num">${money(s.rev)} <span class="muted small">· ${s.n} шт.</span></span></div><div class="bar"><i style="width:${s.rev/max*100}%"></i></div></div>`).join('')||'<div class="empty">Нет данных</div>'}</div>
@@ -103,6 +106,7 @@ act.xlsx = () => {
   add('Услуги',perService(arr).map(s=>({Услуга:s.name,Категория:s.category,Количество:s.n,Выручка:s.rev})));
   add('Сотрудники',perStaff(arr).map(s=>({Сотрудник:s.name,Заказов:s.n,Выручка:s.rev,Зарплата:s.sal,'Средний чек':Math.round(s.avg)})));
   add('Клиенты',perClient(arr).map(c=>({Клиент:c.name,Телефон:c.phone,Авто:c.car,Визитов:c.n,Сумма:c.rev})));
+  add('Расходники',suppliesIn(p).map(x=>({Дата:x.bought_at,Название:x.name,Количество:x.qty,'Цена за ед.':x.unit_price,Сумма:x.qty*x.unit_price,Примечание:x.note||''})));
   add('Заказы',arr.map(o=>({Дата:dt(o.created_at),Авто:o.car,Услуги:(o.services||[]).map(s=>s.name).join(', '),Телефон:o.phone,Сотрудник:sname(o.staff_id),Оплата:PAYN[o.pay_type],Сумма:o.total})));
   XLSX.writeFile(wb,`CarwasH_${dkey(p[0])}_${dkey(p[1])}.xlsx`);
 };

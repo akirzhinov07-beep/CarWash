@@ -4,7 +4,8 @@ import { SUPABASE_URL, SUPABASE_KEY, LOGIN_DOMAIN } from './config.js';
 export const DEMO = new URLSearchParams(location.search).has('demo');
 let sb = null;
 
-const T = ['clients','services','staff','bookings','orders','staff_pay'];
+const T = ['clients','services','staff','bookings','orders','staff_pay','supplies'];
+const ADMIN_ONLY = ['orders','staff_pay','supplies'];
 
 async function supa(){
   if(sb) return sb;
@@ -23,12 +24,13 @@ function demoLoad(){
     staff:[{id:1,name:'Иван Петров',position:'Мойщик',phone:'+7 900 111-11-11',active:true},{id:2,name:'Сергей Ким',position:'Детейлер',phone:'+7 900 222-22-22',active:true}],
     staff_pay:[{staff_id:1,percent:30},{staff_id:2,percent:35}],
     clients:[{id:1,name:'Алексей Смирнов',phone:'+7 901 555-01-01',car:'Toyota Camry',note:'',created_at:new Date(now-9*day).toISOString()},{id:2,name:'Мария Орлова',phone:'+7 902 555-02-02',car:'BMW X5',note:'Любит без воска',created_at:new Date(now-3*day).toISOString()}],
-    bookings:[], orders:[] };
+    bookings:[], orders:[], supplies:[{id:300,name:'Шампунь для бесконтактной мойки',qty:5,unit_price:1800,bought_at:new Date(now-6*day).toISOString().slice(0,10),note:'Канистры по 5 л',created_at:new Date().toISOString()}] };
   for(let i=0;i<24;i++){ const sv=d.services[i%4], st=d.staff[i%2], c=d.clients[i%2], at=new Date(now-(i%9)*day-i*36e5).toISOString();
     d.orders.push({id:200+i,booking_id:null,client_name:c.name,phone:c.phone,car:c.car,services:[{id:sv.id,name:sv.name,category:sv.category,price:sv.price}],total:sv.price,staff_id:st.id,pay_type:i%3?'card':'cash',created_at:at}); }
   return d;
 }
 let demo = DEMO ? demoLoad() : null;
+if(demo && !demo.supplies) demo.supplies = [];
 const demoSave = () => localStorage.setItem(LS, JSON.stringify(demo));
 
 /* ---------- публичный API ---------- */
@@ -59,13 +61,16 @@ export const db = {
 
   async loadAll(role){
     const out = {};
-    const names = T.filter(t => role==='admin' || !['orders','staff_pay'].includes(t));
+    const names = T.filter(t => role==='admin' || !ADMIN_ONLY.includes(t));
     if(DEMO){ names.forEach(n => out[n]=[...demo[n]]); return fill(out); }
     const c = await supa();
     await Promise.all(names.map(async n => {
       let q = c.from(n).select('*'); if(n!=='staff_pay') q = q.order('id',{ascending:true});
       const { data, error } = await q.limit(5000);
-      if(error) throw new Error(error.message);
+      if(error){
+        if(n==='supplies'){ out.supplies = []; out._suppliesMissing = true; return; }
+        throw new Error(error.message);
+      }
       out[n] = data;
     }));
     return fill(out);

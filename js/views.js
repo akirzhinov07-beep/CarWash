@@ -11,6 +11,7 @@ export const NAV = [
   { id:'clients', title:'Клиенты', icon:'users', roles:['admin','staff'] },
   { id:'services', title:'Услуги', icon:'tag', roles:['admin'] },
   { id:'staff', title:'Сотрудники', icon:'badge', roles:['admin'] },
+  { id:'supplies', title:'Расходники', icon:'box', roles:['admin'] },
   { id:'analytics', title:'Аналитика', icon:'chart', roles:['admin'] },
 ];
 const digits = p => String(p||'').replace(/\D/g,'').replace(/^8(?=\d{10}$)/,'7');
@@ -106,7 +107,25 @@ const staffView = {
 };
 export const pay = id => S.data.staff_pay.find(p=>p.staff_id===id)?.percent ?? 0;
 
-export const views = { dashboard:dashboardView, record:recView, bookings:bookingsView, clients:clientsView, services:servicesView, staff:staffView, analytics:analyticsView, actions:{} };
+/* ================= РАСХОДНИКИ ================= */
+const money2 = n => new Intl.NumberFormat('ru-RU',{maximumFractionDigits:2}).format(n);
+const suppliesView = {
+  html(){
+    const list = (S.data.supplies||[]).slice().sort((a,b)=>(b.bought_at||'').localeCompare(a.bought_at||'') || b.id-a.id);
+    const tot = x => x.qty*x.unit_price, now=new Date(), mk=now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');
+    const month = list.filter(x=>(x.bought_at||'').startsWith(mk)).reduce((s,x)=>s+tot(x),0), all = list.reduce((s,x)=>s+tot(x),0);
+    return `<div class="head"><h2>Расходники</h2><button class="btn primary" data-act="editSupply" data-id="">+ Закупка</button></div>
+    ${S.data._suppliesMissing?`<div class="card" style="margin-bottom:14px;border-color:var(--warn)"><b>Раздел ещё не подключён к базе.</b><p class="muted small" style="margin-top:6px">Откройте в репозитории файл <code>supabase/supplies.sql</code>, вставьте его в Supabase → SQL Editor и нажмите Run. Затем обновите страницу.</p></div>`:''}
+    <div class="grid g3 stagger" style="margin-bottom:14px"><div class="card kpi"><span class="lbl">Закуплено за этот месяц</span><b data-count="${month}">${money(month)}</b></div>
+      <div class="card kpi"><span class="lbl">Закуплено всего</span><b data-count="${all}">${money(all)}</b></div><div class="card kpi"><span class="lbl">Позиций в журнале</span><b>${list.length}</b></div></div>
+    ${list.length?`<div class="tablewrap"><table><thead><tr><th>Дата</th><th>Что заказали</th><th class="right">Кол-во</th><th class="right">Цена за ед.</th><th class="right">Сумма</th><th>Примечание</th><th></th></tr></thead><tbody>
+    ${list.map(x=>`<tr><td class="num">${new Date(x.bought_at+'T12:00').toLocaleDateString('ru-RU')}</td><td><b>${esc(x.name)}</b></td><td class="right num">${money2(x.qty)}</td><td class="right num">${money(x.unit_price)}</td><td class="right num"><b>${money(tot(x))}</b></td><td class="muted">${esc(x.note||'')}</td><td class="right"><button class="btn sm" data-act="editSupply" data-id="${x.id}">Изменить</button></td></tr>`).join('')}
+    </tbody></table></div>`:`<div class="card empty">Закупок пока нет. Нажмите «+ Закупка» и запишите, что заказали.</div>`}`;
+  },
+  after(){ document.querySelectorAll('[data-count]').forEach(el=>countUp(el,+el.dataset.count)); }
+};
+
+export const views = { dashboard:dashboardView, supplies:suppliesView, record:recView, bookings:bookingsView, clients:clientsView, services:servicesView, staff:staffView, analytics:analyticsView, actions:{} };
 const A = views.actions;
 registerActions(A);
 
@@ -188,7 +207,32 @@ A.editService = el => { const s=S.data.services.find(x=>x.id===+el.dataset.id);
   <label class="field"><span>Цена, ₽</span><input name="price" type="number" min="0" value="${s?.price??''}" required></label></div>
   <div class="f2"><label class="field"><span>Минут</span><input name="minutes" type="number" min="5" value="${s?.minutes??30}" required></label>
   <label class="field"><span>Статус</span><select name="active"><option value="1"${s?.active!==false?' selected':''}>Активна</option><option value="0"${s?.active===false?' selected':''}>Скрыта</option></select></label></div>
-  <div class="actions"><button type="button" class="btn" data-act="closeModal">Отмена</button><button class="btn primary">Сохранить</button></div></form>`); };
+  <div class="actions">${s?`<button type="button" class="btn danger" data-act="delService" data-id="${s.id}">Удалить</button>`:''}<button type="button" class="btn" data-act="closeModal">Отмена</button><button class="btn primary">Сохранить</button></div></form>`); };
+A.delService = async el => {
+  const id=+el.dataset.id, s=S.data.services.find(x=>x.id===id);
+  if(!confirm(`Удалить услугу «${s.name}»?\n\nВ старых записях и заказах она сохранится как есть. Если услуга временно не нужна, лучше поставить статус «Скрыта».`)) return;
+  await db.remove('services',id); S.data.services=S.data.services.filter(x=>x.id!==id);
+  el.closest('.overlay').remove(); toast('Услуга удалена'); S.render();
+};
+A.editSupply = el => { const x=(S.data.supplies||[]).find(v=>v.id===+el.dataset.id);
+  const names=[...new Set((S.data.supplies||[]).map(v=>v.name))];
+  const m = modal(`<h3>${x?'Закупка':'Новая закупка'}</h3><form data-form="saveSupply" data-id="${x?.id||''}">
+  <label class="field"><span>Что заказали</span><input name="name" list="supn" value="${esc(x?.name)}" placeholder="Шампунь, керамика…" required></label>
+  <datalist id="supn">${names.map(n=>`<option value="${esc(n)}">`).join('')}</datalist>
+  <div class="f2"><label class="field"><span>Количество, шт.</span><input name="qty" type="number" inputmode="decimal" step="any" min="0.01" value="${x?.qty??''}" data-input="supTotal" required></label>
+  <label class="field"><span>Цена за 1 шт., ₽</span><input name="price" type="number" inputmode="decimal" step="any" min="0" value="${x?.unit_price??''}" data-input="supTotal" required></label></div>
+  <div class="total" style="margin-top:14px"><span class="muted">Итого</span><b id="supsum" class="num">${money(x?x.qty*x.unit_price:0)}</b></div>
+  <label class="field"><span>Дата заказа</span><input name="date" type="date" value="${x?.bought_at||dkey(new Date())}" required></label>
+  <label class="field"><span>Примечание (поставщик, номер заказа)</span><input name="note" value="${esc(x?.note)}"></label>
+  <div class="actions">${x?`<button type="button" class="btn danger" data-act="delSupply" data-id="${x.id}">Удалить</button>`:''}<button type="button" class="btn" data-act="closeModal">Отмена</button><button class="btn primary">Сохранить</button></div></form>`); };
+A.supTotal = el => { const f=el.form, t=(+f.qty.value||0)*(+f.price.value||0); $('#supsum').textContent=money(t); };
+A.saveSupply = async f => {
+  const row={name:f.name.value.trim(),qty:+f.qty.value,unit_price:+f.price.value,bought_at:f.date.value,note:f.note.value.trim()||null}, id=+f.dataset.id;
+  if(!(row.qty>0)) throw new Error('Количество должно быть больше нуля');
+  if(id){ const r=await db.update('supplies',id,row); Object.assign(S.data.supplies.find(v=>v.id===id),r); } else S.data.supplies.push(await db.insert('supplies',row));
+  f.closest('.overlay').remove(); toast('Сохранено ✓'); S.render();
+};
+A.delSupply = async el => { if(!confirm('Удалить эту закупку из журнала?')) return; const id=+el.dataset.id; await db.remove('supplies',id); S.data.supplies=S.data.supplies.filter(v=>v.id!==id); el.closest('.overlay').remove(); toast('Удалено'); S.render(); };
 A.saveService = async f => {
   const row={name:f.name.value.trim(),category:f.category.value.trim(),price:+f.price.value,minutes:+f.minutes.value,active:f.active.value==='1'}, id=+f.dataset.id;
   if(id){ const r=await db.update('services',id,row); Object.assign(S.data.services.find(x=>x.id===id),r); } else S.data.services.push(await db.insert('services',row));

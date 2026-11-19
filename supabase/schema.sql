@@ -1,7 +1,7 @@
 -- CarwasH: схема + роли + RLS. Выполнить целиком в Supabase -> SQL Editor.
 -- ВНИМАНИЕ: старые демо-таблицы clients/staff/services/orders/bookings будут удалены.
 
-drop table if exists orders, bookings, staff_pay, staff, services, clients, profiles cascade;
+drop table if exists supplies, orders, bookings, staff_pay, staff, services, clients, profiles cascade;
 
 create table profiles (
   id uuid primary key references auth.users(id) on delete cascade,
@@ -50,6 +50,17 @@ create table orders (
   created_at timestamptz not null default now()
 );
 
+-- расходники (шампунь, керамика и т.д.): только администратор
+create table supplies (
+  id bigint generated always as identity primary key,
+  name text not null,
+  qty numeric not null check (qty > 0),
+  unit_price numeric not null check (unit_price >= 0),
+  bought_at date not null default current_date,
+  note text,
+  created_at timestamptz not null default now()
+);
+
 -- роль берётся ТОЛЬКО из таблицы profiles (не из user_metadata)
 create or replace function public.is_admin() returns boolean
 language sql stable security definer set search_path = public as $$
@@ -80,10 +91,11 @@ alter table staff enable row level security;
 alter table staff_pay enable row level security;
 alter table bookings enable row level security;
 alter table orders enable row level security;
+alter table supplies enable row level security;
 
 revoke all on all tables in schema public from anon, authenticated;
 grant select on profiles to authenticated;
-grant select, insert, update, delete on clients, services, staff, staff_pay, bookings, orders to authenticated;
+grant select, insert, update, delete on clients, services, staff, staff_pay, bookings, orders, supplies to authenticated;
 grant usage, select on all sequences in schema public to authenticated;
 
 create policy profiles_self on profiles for select to authenticated using (id = auth.uid() or is_admin());
@@ -112,6 +124,8 @@ create policy orders_ins     on orders   for insert to authenticated with check 
 create policy orders_adm     on orders   for select to authenticated using (is_admin());
 create policy orders_upd     on orders   for update to authenticated using (is_admin()) with check (is_admin());
 create policy orders_del     on orders   for delete to authenticated using (is_admin());
+
+create policy supplies_adm on supplies for all to authenticated using (is_admin()) with check (is_admin());
 
 -- стартовые услуги
 insert into services(name,category,price,minutes) values

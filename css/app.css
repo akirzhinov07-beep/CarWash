@@ -169,3 +169,9 @@ tbody tr:nth-child(5){animation-delay:.12s}tbody tr:nth-child(6){animation-delay
 .btn.primary::after{content:"";position:absolute;inset:0;background:linear-gradient(110deg,transparent 30%,rgba(255,255,255,.28) 50%,transparent 70%);transform:translateX(-120%)}
 .btn.primary:hover::after{transform:translateX(120%);transition:transform .7s var(--ease)}
 .seg button{transition:all .2s var(--ease)}
+
+/* v3: липкая шапка раздела (кнопка «+» всегда под рукой) */
+.head{position:sticky;top:0;z-index:20;margin:-12px 0 14px;padding:12px 0;background:color-mix(in srgb,var(--bg) 90%,transparent);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
+@media (max-width:900px){.head{top:58px}}
+.toasts{pointer-events:none}
+td.num,td.right{white-space:nowrap}
