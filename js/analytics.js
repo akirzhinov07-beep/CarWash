@@ -3,7 +3,7 @@ import { S, $, esc, money, dt, dkey, countUp } from './core.js';
 const PAYN = { cash:'Наличными', card:'Безналичная' };
 const pct = id => S.data.staff_pay.find(p=>p.staff_id===id)?.percent ?? 0;
 const sname = id => S.data.staff.find(s=>s.id===id)?.name || 'Не указан';
-const A = { range:'month', from:'', to:'', tab:'overview' };
+const A = { range:'month', from:'', to:'', tab:'overview', sup:false };
 const charts = [];
 const cssv = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const day0 = d => { d=new Date(d); d.setHours(0,0,0,0); return d; };
@@ -68,13 +68,13 @@ function body(){
   const p=period(), arr=inRange(p), t=sum(arr), svc=perService(arr), stf=perStaff(arr), cli=perClient(arr);
   const newCli=S.data.clients.filter(c=>{const d=new Date(c.created_at);return d>=p[0]&&d<=p[1];}).length;
   const cash=arr.filter(o=>o.pay_type==='cash').reduce((s,o)=>s+o.total,0);
-  const supSum=suppliesIn(p).reduce((s,x)=>s+x.qty*x.unit_price,0);
+  const supSum=A.sup?suppliesIn(p).reduce((s,x)=>s+x.qty*x.unit_price,0):0;
   if(A.tab==='orders') return `<div class="tablewrap"><table><thead><tr><th>Время</th><th>Авто</th><th>Услуги</th><th>Телефон</th><th>Выполнил</th><th>Оплата</th><th class="right">Сумма</th></tr></thead><tbody>
     ${arr.slice().reverse().map(o=>`<tr><td class="num">${dt(o.created_at)}</td><td>${esc(o.car)}</td><td>${(o.services||[]).map(s=>esc(s.name)).join(', ')}</td><td>${esc(o.phone)}</td><td>${esc(sname(o.staff_id))}</td><td>${PAYN[o.pay_type]||''}</td><td class="right num">${money(o.total)}</td></tr>`).join('')||'<tr><td colspan="7" class="empty">Завершённых заказов за период нет</td></tr>'}</tbody></table></div>`;
   const max=Math.max(1,...svc.map(s=>s.rev));
   return `<div class="grid g4 stagger">${kpi('Выручка',t.rev)}${kpi('Зарплаты',t.sal)}${kpi('Остальной доход',t.profit)}${kpi('Средний чек',t.avg)}</div>
-  <div class="grid g4 stagger" style="margin-top:14px"><div class="card kpi"><span class="lbl">Заказов</span><b>${t.n}</b></div><div class="card kpi"><span class="lbl">Новых клиентов</span><b>${newCli}</b></div>${kpi('Наличными',cash)}${kpi('Безналичная',t.rev-cash)}</div>
-  <div class="grid g2 stagger" style="margin-top:14px">${kpi('Расходники за период',supSum)}${kpi('Чистая прибыль (остальной доход − расходники)',t.profit-supSum)}</div>
+  <div class="grid g4 stagger" style="margin-top:14px"><div class="card kpi"><span class="lbl">Заказов</span><b>${t.n}</b></div><div class="card kpi"><span class="lbl">Новых клиентов</span><b>${newCli}</b></div>${kpi('Наличными',cash)}${kpi('Безналичная',t.rev-cash)}</div>${A.sup?`
+  <div class="grid g2 stagger" style="margin-top:14px">${kpi('Расходники за период',supSum)}${kpi('Чистая прибыль (остальной доход − расходники)',t.profit-supSum)}</div>`:''}
   <div class="grid g-rec" style="margin-top:14px"><div class="card"><h3>Выручка по дням: зарплаты и остальной доход</h3><div class="chartbox"><canvas id="a1"></canvas></div></div>
   <div class="card"><h3>Выручка по услугам</h3><div class="chartbox"><canvas id="a2"></canvas></div></div></div>
   <div class="grid g2" style="margin-top:14px"><div class="card"><h3>Аналитика по услугам</h3>${svc.map(s=>`<div style="margin-bottom:12px"><div class="row" style="justify-content:space-between"><b>${esc(s.name)}</b><span class="num">${money(s.rev)} <span class="muted small">· ${s.n} шт.</span></span></div><div class="bar"><i style="width:${s.rev/max*100}%"></i></div></div>`).join('')||'<div class="empty">Нет данных</div>'}</div>
@@ -89,6 +89,7 @@ export const analyticsView = {
     <div class="row" style="margin-bottom:16px">
       <div class="seg">${[['today','Сегодня'],['week','7 дней'],['month','Месяц'],['custom','Период']].map(([k,l])=>`<button class="${A.range===k?'on':''}" data-act="range" data-r="${k}">${l}</button>`).join('')}</div>
       ${A.range==='custom'?`<input type="date" id="df" value="${A.from}" data-change="aDate" style="width:auto"><input type="date" id="dtt" value="${A.to}" data-change="aDate" style="width:auto">`:`<span class="muted small">${a.toLocaleDateString('ru-RU')} — ${b.toLocaleDateString('ru-RU')}</span>`}
+      <label class="check"><input type="checkbox" data-change="aSup"${A.sup?' checked':''}><span>Включить расходники в аналитику</span></label>
       <div class="seg" style="margin-left:auto"><button class="${A.tab==='overview'?'on':''}" data-act="atab" data-t="overview">Обзор</button><button class="${A.tab==='orders'?'on':''}" data-act="atab" data-t="orders">Заказы</button></div></div>
     ${body()}`; },
   after(){ kill(); animateKpis(); if(A.tab!=='overview') return; const p=period(), arr=inRange(p);
@@ -96,17 +97,18 @@ export const analyticsView = {
 };
 export function registerActions(act){
 act.range = el => { A.range=el.dataset.r; if(A.range==='custom'&&!A.from){ const n=new Date(); A.to=dkey(n); n.setDate(n.getDate()-13); A.from=dkey(n);} S.render(); };
+act.aSup = el => { A.sup = el.checked; S.render(); };
 act.atab = el => { A.tab=el.dataset.t; S.render(); };
 act.aDate = () => { A.from=$('#df').value; A.to=$('#dtt').value; S.render(); };
 act.xlsx = () => {
   if(typeof XLSX==='undefined') throw new Error('Библиотека Excel не загружена');
   const p=period(), arr=inRange(p), t=sum(arr), wb=XLSX.utils.book_new(), add=(n,rows)=>XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(rows.length?rows:[{'':'Нет данных'}]),n);
-  add('Сводка',[{Показатель:'Период',Значение:p[0].toLocaleDateString('ru-RU')+' — '+p[1].toLocaleDateString('ru-RU')},{Показатель:'Выручка',Значение:t.rev},{Показатель:'Зарплаты',Значение:t.sal},{Показатель:'Остальной доход',Значение:t.profit},{Показатель:'Заказов',Значение:t.n},{Показатель:'Средний чек',Значение:Math.round(t.avg)}]);
+  add('Сводка',[{Показатель:'Период',Значение:p[0].toLocaleDateString('ru-RU')+' — '+p[1].toLocaleDateString('ru-RU')},{Показатель:'Выручка',Значение:t.rev},{Показатель:'Зарплаты',Значение:t.sal},{Показатель:'Остальной доход',Значение:t.profit},{Показатель:'Заказов',Значение:t.n},{Показатель:'Средний чек',Значение:Math.round(t.avg)}].concat(A.sup?[{Показатель:'Расходники',Значение:suppliesIn(p).reduce((s,x)=>s+x.qty*x.unit_price,0)},{Показатель:'Чистая прибыль (доход − расходники)',Значение:t.profit-suppliesIn(p).reduce((s,x)=>s+x.qty*x.unit_price,0)}]:[]));
   add('По дням',perDay(arr,p).map(d=>({Дата:d.k,Заказов:d.n,Выручка:d.rev,Зарплаты:d.sal,'Остальной доход':d.profit})));
   add('Услуги',perService(arr).map(s=>({Услуга:s.name,Категория:s.category,Количество:s.n,Выручка:s.rev})));
   add('Сотрудники',perStaff(arr).map(s=>({Сотрудник:s.name,Заказов:s.n,Выручка:s.rev,Зарплата:s.sal,'Средний чек':Math.round(s.avg)})));
   add('Клиенты',perClient(arr).map(c=>({Клиент:c.name,Телефон:c.phone,Авто:c.car,Визитов:c.n,Сумма:c.rev})));
-  add('Расходники',suppliesIn(p).map(x=>({Дата:x.bought_at,Название:x.name,Количество:x.qty,'Цена за ед.':x.unit_price,Сумма:x.qty*x.unit_price,Примечание:x.note||''})));
+  if(A.sup) add('Расходники',suppliesIn(p).map(x=>({Дата:x.bought_at,Название:x.name,Количество:x.qty,'Цена за ед.':x.unit_price,Сумма:x.qty*x.unit_price,Примечание:x.note||''})));
   add('Заказы',arr.map(o=>({Дата:dt(o.created_at),Авто:o.car,Услуги:(o.services||[]).map(s=>s.name).join(', '),Телефон:o.phone,Сотрудник:sname(o.staff_id),Оплата:PAYN[o.pay_type],Сумма:o.total})));
   XLSX.writeFile(wb,`CarwasH_${dkey(p[0])}_${dkey(p[1])}.xlsx`);
 };
