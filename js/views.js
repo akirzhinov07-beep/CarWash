@@ -19,6 +19,22 @@ const digits = p => String(p||'').replace(/\D/g,'').replace(/^8(?=\d{10}$)/,'7')
 const isAdmin = () => S.user.role==='admin';
 const hasMk = () => !S.data.clients.length || 'marketing_ok' in S.data.clients[0];
 const waLink = (phone,text='') => digits(phone).length===11 ? `<a class="waicon" title="Написать в WhatsApp" aria-label="WhatsApp" href="https://wa.me/${digits(phone)}${text?'?text='+encodeURIComponent(text):''}" target="_blank" rel="noopener">${icon('chat')}</a>` : '';
+const carsOn = () => !S.data._carsMissing;
+const carsOf = id => (S.data.cars||[]).filter(k=>k.client_id===id);
+const plateTag = p => p ? `<span class="plate">${esc(p)}</span>` : '';
+const carsText = c => { const ks=carsOf(c.id); return ks.length ? ks.map(k=>`${esc(k.model)} ${plateTag(k.plate)}`).join('<br>') : esc(c.car||'—'); };
+const carShort = c => { const ks=carsOf(c.id); return ks.length ? ks.map(k=>k.model+(k.plate?' '+k.plate:'')).join(', ') : (c.car||''); };
+const carHay = c => (c.car||'')+' '+carsOf(c.id).map(k=>k.model+' '+(k.plate||'')).join(' ');
+const carLine = b => esc(b.car)+(b.plate?' '+plateTag(b.plate):'');
+const normS = s => String(s||'').replace(/\s+/g,'').toLowerCase();
+async function ensureCar(client, model, plate){
+  if(!carsOn() || !model) return;
+  const own = carsOf(client.id), m = normS(model);
+  let k = plate ? own.find(x=>normS(x.plate)===normS(plate)) : own.find(x=>normS(x.model)===m);
+  if(!k && plate) k = own.find(x=>!x.plate && normS(x.model)===m);
+  if(k){ const patch={}; if(k.model!==model) patch.model=model; if(plate && k.plate!==plate) patch.plate=plate; if(Object.keys(patch).length) Object.assign(k, await db.update('cars',k.id,patch)); }
+  else S.data.cars.push(await db.insert('cars',{client_id:client.id, model, plate:plate||null}));
+}
 const STATUS = { pending:['Ожидает','p-warn'], done:['Выполнено','p-ok'], cancelled:['Отказался','p-bad'] };
 const PAY = { cash:'Наличными', card:'Безналичная оплата' };
 export const payName = p => PAY[p] || '—';
@@ -26,7 +42,7 @@ const bySvc = id => S.data.services.find(s=>s.id===id);
 const staffName = id => S.data.staff.find(s=>s.id===id)?.name || '—';
 
 /* ================= ЗАПИСЬ ================= */
-const rec = { client:null, svcs:new Set(), q:'', date:null, time:null };
+const rec = { carId:null, client:null, svcs:new Set(), q:'', date:null, time:null };
 const pad2 = n => String(n).padStart(2,'0');
 const toMin = t => +t.slice(0,2)*60 + +t.slice(3,5);
 const fromMin = m => pad2(Math.floor(m/60))+':'+pad2(m%60);
@@ -74,7 +90,9 @@ const recView = {
         <div id="sugg"></div>
         <div class="f2"><label class="field"><span>Имя клиента</span><input name="name" required></label>
         <label class="field"><span>Телефон *</span><input name="phone" type="tel" inputmode="tel" placeholder="+7 (900) 000-00-00" data-phone data-input="recPhone" required></label></div>
-        <label class="field"><span>Марка и модель авто *</span><input name="car" placeholder="Toyota Camry" required></label>
+        <div id="carpick"></div>
+        <div class="${carsOn()?'f2':''}"><label class="field"><span>Марка и модель авто *</span><input name="car" placeholder="Toyota Camry" required></label>
+        ${carsOn()?'<label class="field"><span>Гос. знак</span><input name="plate" placeholder="А123ВС 123" autocapitalize="characters" style="text-transform:uppercase"></label>':''}</div>
         ${hasMk()?'<label class="check"><input type="checkbox" name="mk" checked><span class="small">Клиент согласен получать сообщения от мойки (WhatsApp)</span></label>':''}
         ${whenBlock()}
         <div><label class="field"><span>Сотрудник (необязательно)</span><select name="staff"><option value="">Любой</option>${S.data.staff.filter(s=>s.active).map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select></label></div>
@@ -92,7 +110,9 @@ const recView = {
   sync(){
     const t = [...rec.svcs].reduce((s,id)=>s+(bySvc(id)?.price||0),0); const el=$('#tot'); if(el) el.textContent=money(t);
     const p=$('#picked'); if(!p) return;
-    p.innerHTML = rec.client ? `<div class="picked" style="margin-bottom:12px"><span>✓ ${esc(rec.client.name)} · ${esc(rec.client.car||'')}</span><button type="button" class="btn sm" data-act="unpick">Сменить</button></div>` : '';
+    p.innerHTML = rec.client ? `<div class="picked" style="margin-bottom:12px"><span>✓ ${esc(rec.client.name)} · ${esc(carShort(rec.client))}</span><button type="button" class="btn sm" data-act="unpick">Сменить</button></div>` : '';
+    const cp=$('#carpick'), ks = rec.client && carsOn() ? carsOf(rec.client.id) : [];
+    if(cp) cp.innerHTML = ks.length ? `<div class="field"><span>Авто клиента</span><div class="chips">${ks.map(k=>`<button type="button" class="chip${rec.carId===k.id?' on':''}" data-act="pickCar" data-id="${k.id}">${esc(k.model)}${k.plate?`<small>${esc(k.plate)}</small>`:''}</button>`).join('')}<button type="button" class="chip${rec.carId==='new'?' on':''}" data-act="pickCar" data-id="new">+ Другое авто</button></div></div>` : '';
   }
 };
 
@@ -108,13 +128,13 @@ const bookingsView = {
       <input type="date" value="${bk.day}" data-change="setDay" style="width:auto"><button class="btn sm" data-act="dayShift" data-d="1">→</button>
       <button class="btn sm" data-act="dayToday">Сегодня</button></div></div>
     ${list.length? `<div class="mcards">${list.map(b=>`<div class="mcard"><div class="mrow"><b class="num">${new Date(b.starts_at).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})}</b>${statusCtl(b)}</div>
-      <div><b>${esc(b.client_name)}</b> · <a href="tel:${esc(b.phone)}">${esc(b.phone)}</a>${waLink(b.phone)}</div><div>${esc(b.car)}</div>
+      <div><b>${esc(b.client_name)}</b> · <a href="tel:${esc(b.phone)}">${esc(b.phone)}</a>${waLink(b.phone)}</div><div>${carLine(b)}</div>
       <div class="muted small">${(b.services||[]).map(s=>esc(s.name)).join(', ')}${b.comment?` · 💬 ${esc(b.comment)}`:''}</div>
       <div class="mrow"><span class="muted small">${staffName(b.staff_id)}</span><b class="num">${money(b.total)}</b></div></div>`).join('')}</div>
     <div class="tablewrap dtonly"><table><thead><tr><th>Время</th><th>Клиент</th><th>Авто</th><th>Услуги</th><th>Сотрудник</th><th class="right">Сумма</th><th>Статус</th></tr></thead><tbody>
     ${list.map(b=>`<tr><td class="num">${new Date(b.starts_at).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})}</td>
       <td><b>${esc(b.client_name)}</b><br><span class="muted small">${esc(b.phone)}</span>${waLink(b.phone)}${b.comment?`<br><span class="muted small">💬 ${esc(b.comment)}</span>`:''}</td>
-      <td>${esc(b.car)}</td><td>${(b.services||[]).map(s=>esc(s.name)).join(', ')}</td><td>${staffName(b.staff_id)}</td>
+      <td>${carLine(b)}</td><td>${(b.services||[]).map(s=>esc(s.name)).join(', ')}</td><td>${staffName(b.staff_id)}</td>
       <td class="right num">${money(b.total)}</td>
       <td>${statusCtl(b)}</td></tr>`).join('')}
     </tbody></table></div>` : `<div class="card empty">На этот день записей нет</div>`}`;
@@ -123,27 +143,28 @@ const bookingsView = {
 
 /* ================= КЛИЕНТЫ ================= */
 const cl = { q:'' };
+const cardBtn = c => carsOn() ? `<button class="btn sm" data-act="openCard" data-id="${c.id}">Авто и фото</button>` : '';
 function clientRows(){
   const q = cl.q.trim().toLowerCase(), qd = digits(cl.q);
-  const list = S.data.clients.filter(c => !q || c.name.toLowerCase().includes(q) || (qd && digits(c.phone).includes(qd)) || (c.car||'').toLowerCase().includes(q)).slice().reverse();
+  const list = S.data.clients.filter(c => !q || c.name.toLowerCase().includes(q) || (qd && digits(c.phone).includes(qd)) || carHay(c).toLowerCase().includes(q)).slice().reverse();
   const stat = c => { const o=S.data.orders.filter(o=>digits(o.phone)===digits(c.phone)); return [o.length,o.reduce((s,x)=>s+x.total,0)]; };
-  return list.length? list.map(c=>{ const [n,sum]=isAdmin()?stat(c):[0,0]; return `<tr><td><b>${esc(c.name)}</b></td><td>${esc(c.phone)}${waLink(c.phone)}</td><td>${esc(c.car||'—')}</td><td class="muted">${esc(c.note||'')}</td>
+  return list.length? list.map(c=>{ const [n,sum]=isAdmin()?stat(c):[0,0]; return `<tr><td><b>${esc(c.name)}</b></td><td>${esc(c.phone)}${waLink(c.phone)}</td><td>${carsText(c)}</td><td class="muted">${esc(c.note||'')}</td>
     <td><input type="checkbox" title="Согласие на сообщения" data-change="togConsent" data-id="${c.id}"${c.marketing_ok?' checked':''}${hasMk()?'':' disabled'}></td>
-    ${isAdmin()?`<td class="num">${n}</td><td class="num">${money(sum)}</td><td class="right"><button class="btn sm" data-act="editClient" data-id="${c.id}">Изменить</button></td>`:''}</tr>`; }).join('')
+    ${isAdmin()?`<td class="num">${n}</td><td class="num">${money(sum)}</td>`:''}<td class="right" style="white-space:nowrap">${cardBtn(c)}${isAdmin()?`<button class="btn sm" data-act="editClient" data-id="${c.id}">Изменить</button>`:''}</td></tr>`; }).join('')
     : `<tr><td colspan="8" class="empty">Никого не найдено</td></tr>`;
 }
 function clientCards(){
   const q = cl.q.trim().toLowerCase(), qd = digits(cl.q);
-  const list = S.data.clients.filter(c => !q || c.name.toLowerCase().includes(q) || (qd && digits(c.phone).includes(qd)) || (c.car||'').toLowerCase().includes(q)).slice().reverse();
-  return list.length ? list.map(c=>`<div class="mcard"><div class="mrow"><b>${esc(c.name)}</b>${isAdmin()?`<button class="btn sm" data-act="editClient" data-id="${c.id}">Изменить</button>`:''}</div>
-    <div><a href="tel:${esc(c.phone)}">${esc(c.phone)}</a>${waLink(c.phone)}</div><div>${esc(c.car||'—')}</div>
+  const list = S.data.clients.filter(c => !q || c.name.toLowerCase().includes(q) || (qd && digits(c.phone).includes(qd)) || carHay(c).toLowerCase().includes(q)).slice().reverse();
+  return list.length ? list.map(c=>`<div class="mcard"><div class="mrow"><b>${esc(c.name)}</b><span class="row">${cardBtn(c)}${isAdmin()?`<button class="btn sm" data-act="editClient" data-id="${c.id}">Изменить</button>`:''}</span></div>
+    <div><a href="tel:${esc(c.phone)}">${esc(c.phone)}</a>${waLink(c.phone)}</div><div>${carsText(c)}</div>
     <label class="check" style="margin:4px 0"><input type="checkbox" data-change="togConsent" data-id="${c.id}"${c.marketing_ok?' checked':''}${hasMk()?'':' disabled'}><span class="small">Согласен на сообщения</span></label>${c.note?`<div class="muted small">${esc(c.note)}</div>`:''}</div>`).join('') : '<div class="card empty">Никого не найдено</div>';
 }
 const clientsView = {
-  html(){ return `<div class="head"><h2>Клиенты</h2><button class="btn primary" data-act="newClient">+ Новый клиент</button></div>
+  html(){ return `${S.data._carsMissing?'<div class="card" style="margin-bottom:14px;border-color:var(--warn)"><b>Фото и несколько авто ещё не подключены.</b><p class="muted small" style="margin-top:6px">Откройте в репозитории файл <code>supabase/cars.sql</code>, вставьте в Supabase → SQL Editor и нажмите Run. Затем обновите страницу.</p></div>':''}<div class="head"><h2>Клиенты</h2><button class="btn primary" data-act="newClient">+ Новый клиент</button></div>
     <input data-input="clSearch" placeholder="Поиск по ФИО, телефону или авто" value="${esc(cl.q)}" style="margin-bottom:14px;max-width:460px">
     <div class="mcards" id="clcards">${clientCards()}</div>
-    <div class="tablewrap dtonly"><table><thead><tr><th>Клиент</th><th>Телефон</th><th>Авто</th><th>Заметка</th><th title="Согласие на сообщения">Рассылка</th>${isAdmin()?'<th>Визитов</th><th>Потрачено</th><th></th>':''}</tr></thead><tbody id="clrows">${clientRows()}</tbody></table></div>`; }
+    <div class="tablewrap dtonly"><table><thead><tr><th>Клиент</th><th>Телефон</th><th>Авто</th><th>Заметка</th><th title="Согласие на сообщения">Рассылка</th>${isAdmin()?'<th>Визитов</th><th>Потрачено</th>':''}<th></th></tr></thead><tbody id="clrows">${clientRows()}</tbody></table></div>`; }
 };
 
 /* ================= УСЛУГИ / СОТРУДНИКИ ================= */
@@ -220,26 +241,31 @@ A.recSlot = el => { rec.time=el.dataset.t; const c=$('#rectcustom'); if(c) c.val
 A.recNow = () => { const n=new Date(); rec.date=dkey(n); rec.time=pad2(n.getHours())+':'+pad2(n.getMinutes()); refreshWhen(); };
 A.recTime = el => { if(el.value){ rec.time=el.value; refreshWhen(); } };
 A.togSvc = el => { const id=+el.dataset.id; rec.svcs.has(id)?rec.svcs.delete(id):rec.svcs.add(id); el.classList.toggle('on'); recView.sync(); };
-A.unpick = () => { rec.client=null; recView.sync(); };
+A.unpick = () => { rec.client=null; rec.carId=null; recView.sync(); };
 A.recSearch = el => {
   const q=el.value.trim().toLowerCase(), qd=digits(el.value), box=$('#sugg');
   if(q.length<2){ box.innerHTML=''; return; }
-  const r = S.data.clients.filter(c=>c.name.toLowerCase().includes(q)||(qd.length>=3&&digits(c.phone).includes(qd))||(c.car||'').toLowerCase().includes(q)).slice(0,6);
-  box.innerHTML = r.length? `<div class="suggest">${r.map(c=>`<button type="button" data-act="pickClient" data-id="${c.id}"><span><b>${esc(c.name)}</b> · ${esc(c.car||'')}</span><span class="muted">${esc(c.phone)}</span></button>`).join('')}</div>` : '<p class="muted small" style="margin-top:6px">Не найден — заполните данные ниже, клиент сохранится автоматически</p>';
+  const r = S.data.clients.filter(c=>c.name.toLowerCase().includes(q)||(qd.length>=3&&digits(c.phone).includes(qd))||carHay(c).toLowerCase().includes(q)).slice(0,6);
+  box.innerHTML = r.length? `<div class="suggest">${r.map(c=>`<button type="button" data-act="pickClient" data-id="${c.id}"><span><b>${esc(c.name)}</b> · ${esc(carShort(c))}</span><span class="muted">${esc(c.phone)}</span></button>`).join('')}</div>` : '<p class="muted small" style="margin-top:6px">Не найден — заполните данные ниже, клиент сохранится автоматически</p>';
 };
 A.recPhone = el => {
   const d = digits(el.value), f = el.form;
   if(rec.client && digits(rec.client.phone)!==d){ rec.client=null; recView.sync(); }
   if(d.length!==11 || rec.client) return;
   const c = S.data.clients.find(x=>digits(x.phone)===d); if(!c) return;
-  rec.client=c; f.name.value=c.name; f.car.value=c.car||''; recView.sync(); toast('Клиент найден: данные подставлены');
+  rec.client=c; f.name.value=c.name; fillCar(f,c); recView.sync(); toast('Клиент найден: данные подставлены');
 };
+function fillCar(f,c){ const ks=carsOf(c.id), k=ks[ks.length-1]; rec.carId=k?k.id:null; f.car.value=k?k.model:(c.car||''); if(f.plate) f.plate.value=k?.plate||''; }
+A.pickCar = el => { const f=$('form[data-form=saveBooking]'), id=el.dataset.id;
+  if(id==='new'){ rec.carId='new'; f.car.value=''; if(f.plate) f.plate.value=''; f.car.focus(); }
+  else { const k=(S.data.cars||[]).find(x=>x.id===+id); rec.carId=k.id; f.car.value=k.model; if(f.plate) f.plate.value=k.plate||''; }
+  recView.sync(); };
 A.pickClient = el => {
   const c = S.data.clients.find(x=>x.id===+el.dataset.id); rec.client=c; const f=$('form[data-form=saveBooking]');
-  f.name.value=c.name; f.phone.value=maskPhone(c.phone); f.car.value=c.car||''; $('#sugg').innerHTML=''; $('#rq').value=''; recView.sync();
+  f.name.value=c.name; f.phone.value=maskPhone(c.phone); fillCar(f,c); $('#sugg').innerHTML=''; $('#rq').value=''; recView.sync();
 };
 A.saveBooking = async f => {
-  const name=f.name.value.trim(), phone=f.phone.value.trim(), car=f.car.value.trim();
+  const name=f.name.value.trim(), phone=f.phone.value.trim(), car=f.car.value.trim(), plate=f.plate?f.plate.value.trim().toUpperCase():'';
   if(digits(phone).length!==11) throw new Error('Введите номер полностью: +7 (900) 000-00-00');
   if(!rec.svcs.size) throw new Error('Выберите хотя бы одну услугу');
   if(!rec.date || !rec.time) throw new Error('Выберите дату и время');
@@ -247,10 +273,11 @@ A.saveBooking = async f => {
   let client = rec.client || S.data.clients.find(c=>digits(c.phone)===digits(phone));
   if(!client){ client = await db.insert('clients',{name,phone,car,...(hasMk()?{marketing_ok:!!f.mk?.checked}:{})}); S.data.clients.push(client); }
   else if(client.car!==car && car){ await db.update('clients',client.id,{car}); client.car=car; }
+  await ensureCar(client, car, plate);
   const svcs=[...rec.svcs].map(id=>{const s=bySvc(id);return {id:s.id,name:s.name,category:s.category,price:s.price};});
-  const b = await db.insert('bookings',{ client_id:client.id, client_name:name||client.name, phone, car, comment:f.comment.value.trim()||null,
+  const b = await db.insert('bookings',{ client_id:client.id, client_name:name||client.name, phone, car, ...(carsOn()?{plate:plate||null}:{}), comment:f.comment.value.trim()||null,
     services:svcs, total:svcs.reduce((s,x)=>s+x.price,0), staff_id:f.staff.value?+f.staff.value:null, starts_at:new Date(`${rec.date}T${rec.time}`).toISOString() });
-  S.data.bookings.push(b); rec.client=null; rec.svcs=new Set(); rec.date=null; rec.time=null; bk.day=dkey(b.starts_at);
+  S.data.bookings.push(b); rec.client=null; rec.carId=null; rec.svcs=new Set(); rec.date=null; rec.time=null; bk.day=dkey(b.starts_at);
   toast('Клиент записан ✓'); S.tab='bookings'; S.render();
 };
 A.setDay = el => { bk.day=el.value||dkey(new Date()); S.render(); };
@@ -279,7 +306,7 @@ A.clSearch = el => { cl.q=el.value; $('#clrows').innerHTML=clientRows(); const m
 const clientForm = c => modal(`<h3>${c?'Клиент':'Новый клиент'}</h3><form data-form="saveClient" data-id="${c?.id||''}">
   <label class="field"><span>ФИО</span><input name="name" value="${esc(c?.name)}" required></label>
   <label class="field"><span>Телефон</span><input name="phone" type="tel" inputmode="tel" placeholder="+7 (900) 000-00-00" data-phone value="${esc(c?.phone?maskPhone(c.phone):'')}" required></label>
-  <label class="field"><span>Авто</span><input name="car" value="${esc(c?.car)}"></label>
+  ${c&&carsOn()?'<p class="muted small">Автомобили и фото — кнопка «Авто и фото» в списке клиентов.</p>':`<div class="${carsOn()?'f2':''}"><label class="field"><span>Авто</span><input name="car" value="${esc(c?.car)}"></label>${carsOn()?'<label class="field"><span>Гос. знак</span><input name="plate" autocapitalize="characters" style="text-transform:uppercase"></label>':''}</div>`}
   <label class="field"><span>Заметка</span><textarea name="note">${esc(c?.note)}</textarea></label>
   ${hasMk()?`<label class="check"><input type="checkbox" name="mk"${(c?c.marketing_ok:true)?' checked':''}><span>Согласен получать сообщения (WhatsApp)</span></label>`:''}
   <div class="actions">${c&&isAdmin()?'<button type="button" class="btn danger" data-act="delClient" data-id="'+c.id+'">Удалить</button>':''}<button type="button" class="btn" data-act="closeModal">Отмена</button><button class="btn primary">Сохранить</button></div></form>`);
@@ -287,7 +314,7 @@ A.newClient = () => clientForm(null);
 A.editClient = el => clientForm(S.data.clients.find(c=>c.id===+el.dataset.id));
 A.saveClient = async f => {
   if(digits(f.phone.value).length!==11) throw new Error('Введите номер полностью: +7 (900) 000-00-00');
-  const row={name:f.name.value.trim(),phone:f.phone.value.trim(),car:f.car.value.trim(),note:f.note.value.trim(), ...(hasMk()?{marketing_ok:!!f.mk?.checked}:{})}, id=+f.dataset.id;
+  const row={name:f.name.value.trim(),phone:f.phone.value.trim(),...(f.car?{car:f.car.value.trim()}:{}),note:f.note.value.trim(), ...(hasMk()?{marketing_ok:!!f.mk?.checked}:{})}, id=+f.dataset.id;
   if(id){
     const old={...S.data.clients.find(c=>c.id===id)};
     const r=await db.update('clients',id,row); Object.assign(S.data.clients.find(c=>c.id===id),r);
@@ -298,10 +325,10 @@ A.saveClient = async f => {
       const phones=[...new Set(S.data.orders.filter(o=>digits(o.phone)===digits(old.phone)).map(o=>o.phone))];
       for(const p of phones){ await db.updateWhere('orders','phone',p,patch); S.data.orders.filter(o=>o.phone===p).forEach(o=>Object.assign(o,patch)); }
     }
-  } else S.data.clients.push(await db.insert('clients',row));
+  } else { const nc=await db.insert('clients',row); S.data.clients.push(nc); await ensureCar(nc, row.car, f.plate?f.plate.value.trim().toUpperCase():''); }
   f.closest('.overlay').remove(); toast('Сохранено ✓ (имя обновлено во всех записях и заказах)'); S.render();
 };
-A.delClient = async el => { if(!confirm('Удалить клиента?')) return; const id=+el.dataset.id; await db.remove('clients',id); S.data.clients=S.data.clients.filter(c=>c.id!==id); el.closest('.overlay').remove(); S.render(); };
+A.delClient = async el => { if(!confirm('Удалить клиента?')) return; const id=+el.dataset.id; try{ await db.removeFiles((S.data.client_photos||[]).filter(p=>p.client_id===id).map(p=>p.path)); }catch{} await db.remove('clients',id); S.data.cars=(S.data.cars||[]).filter(k=>k.client_id!==id); S.data.client_photos=(S.data.client_photos||[]).filter(p=>p.client_id!==id); S.data.clients=S.data.clients.filter(c=>c.id!==id); el.closest('.overlay').remove(); S.render(); };
 A.editService = el => { const s=S.data.services.find(x=>x.id===+el.dataset.id);
   modal(`<h3>${s?'Услуга':'Новая услуга'}</h3><form data-form="saveService" data-id="${s?.id||''}">
   <label class="field"><span>Название</span><input name="name" value="${esc(s?.name)}" required></label>
@@ -447,4 +474,79 @@ A.togConsent = async el => {
   const c=S.data.clients.find(x=>x.id===+el.dataset.id), v=el.checked;
   try{ await db.update('clients',c.id,{marketing_ok:v}); c.marketing_ok=v; toast(v?'Согласие отмечено':'Согласие снято'); }
   catch(e){ el.checked=!v; throw e; }
+};
+
+/* ================= Карточка клиента: авто и фото ================= */
+const card = { id:null, edit:null, urls:{}, busy:false };
+async function shrink(file, max=1280){
+  const url = URL.createObjectURL(file);
+  try{
+    const img = await new Promise((ok,no)=>{ const i=new Image(); i.onload=()=>ok(i); i.onerror=()=>no(new Error('Не удалось открыть фото')); i.src=url; });
+    const k = Math.min(1, max/Math.max(img.naturalWidth,img.naturalHeight)), cv=document.createElement('canvas');
+    cv.width=Math.round(img.naturalWidth*k); cv.height=Math.round(img.naturalHeight*k);
+    cv.getContext('2d').drawImage(img,0,0,cv.width,cv.height);
+    return await new Promise(ok=>cv.toBlob(ok,'image/jpeg',.82));
+  } finally { URL.revokeObjectURL(url); }
+}
+function photoGrid(){
+  const ph = S.data.client_photos.filter(p=>p.client_id===card.id).slice().reverse();
+  if(!ph.length) return '<p class="muted small">Фотографий пока нет</p>';
+  return `<div class="photos">${ph.map(p=>{ const k=S.data.cars.find(x=>x.id===p.car_id), u=card.urls[p.path];
+    return `<figure>${u?`<a href="${esc(u)}" target="_blank" rel="noopener"><img src="${esc(u)}" alt="Фото клиента" loading="lazy"></a>`:'<div class="ph-wait"></div>'}
+      <figcaption>${k?esc(k.model):'Без привязки'}${isAdmin()?`<button type="button" class="x" title="Удалить фото" data-act="delPhoto" data-id="${p.id}">×</button>`:''}</figcaption></figure>`; }).join('')}</div>`;
+}
+function cardBody(){
+  const c=S.data.clients.find(x=>x.id===card.id), ks=carsOf(c.id), ed=ks.find(k=>k.id===card.edit);
+  return `<h3>${esc(c.name)}</h3><p class="muted">${esc(c.phone)}</p>
+  <div class="cat">Автомобили</div>
+  ${ks.length?ks.map(k=>`<div class="warow"><span><b>${esc(k.model)}</b> ${plateTag(k.plate)}</span><span class="row"><button class="btn sm" data-act="carEdit" data-id="${k.id}">Изменить</button>${isAdmin()?`<button class="btn sm danger" data-act="carDel" data-id="${k.id}">Удалить</button>`:''}</span></div>`).join(''):'<p class="muted small">Авто не указано</p>'}
+  <form data-form="carSave" data-id="${ed?.id||''}" style="margin-top:10px" autocomplete="off"><div class="f2">
+    <label class="field"><span>${ed?'Изменить авто':'Добавить авто'}</span><input name="model" placeholder="Марка и модель" value="${esc(ed?.model)}" required></label>
+    <label class="field"><span>Гос. знак (необязательно)</span><input name="plate" placeholder="А123ВС 123" autocapitalize="characters" style="text-transform:uppercase" value="${esc(ed?.plate)}"></label></div>
+    <div class="row"><button class="btn primary sm">${ed?'Сохранить':'+ Добавить'}</button>${ed?'<button type="button" class="btn sm" data-act="carEditCancel">Отмена</button>':''}</div></form>
+  <div class="cat" style="margin-top:18px">Фотографии</div>
+  <div class="row" style="margin-bottom:10px">
+    <select id="photocar" style="width:auto;max-width:60%"><option value="">Без привязки к авто</option>${ks.map(k=>`<option value="${k.id}">${esc(k.model)}${k.plate?' · '+esc(k.plate):''}</option>`).join('')}</select>
+    <label class="btn sm${card.busy?' disabled':''}" style="cursor:pointer">${icon('plus')}${card.busy?'Загрузка…':'Добавить фото'}<input type="file" accept="image/*" multiple style="display:none" data-change="photoPick"${card.busy?' disabled':''}></label></div>
+  <div id="photogrid">${photoGrid()}</div>
+  <div class="actions"><button type="button" class="btn" data-act="closeModal">Закрыть</button></div>`;
+}
+async function cardRefresh(){
+  const box=$('#cardbox'); if(!box) return;
+  const keep=$('#photocar')?.value; box.innerHTML=cardBody(); if(keep&&$('#photocar')) $('#photocar').value=keep;
+  const need=S.data.client_photos.filter(p=>p.client_id===card.id && !card.urls[p.path]).map(p=>p.path);
+  if(need.length){ try{ Object.assign(card.urls, await db.photoUrls(need)); }catch(e){ toast(e.message,true); } const g=$('#photogrid'); if(g) g.innerHTML=photoGrid(); }
+}
+A.openCard = el => { card.id=+el.dataset.id; card.edit=null; const m=modal('<div id="cardbox"></div>'); m.firstElementChild.classList.add('wide'); cardRefresh(); };
+A.carEdit = el => { card.edit=+el.dataset.id; cardRefresh(); };
+A.carEditCancel = () => { card.edit=null; cardRefresh(); };
+A.carSave = async f => {
+  const model=f.model.value.trim(), plate=f.plate.value.trim().toUpperCase(), id=+f.dataset.id;
+  if(!model) throw new Error('Укажите марку и модель');
+  if(id){ Object.assign(S.data.cars.find(k=>k.id===id), await db.update('cars',id,{model,plate:plate||null})); }
+  else S.data.cars.push(await db.insert('cars',{client_id:card.id, model, plate:plate||null}));
+  const c=S.data.clients.find(x=>x.id===card.id); if(c.car!==model){ await db.update('clients',c.id,{car:model}); c.car=model; }
+  card.edit=null; toast('Сохранено ✓'); cardRefresh();
+};
+A.carDel = async el => {
+  const id=+el.dataset.id, k=S.data.cars.find(x=>x.id===id);
+  if(!confirm(`Удалить авто «${k.model}»? Фотографии останутся, но потеряют привязку к авто.`)) return;
+  await db.remove('cars',id); S.data.cars=S.data.cars.filter(x=>x.id!==id); S.data.client_photos.filter(p=>p.car_id===id).forEach(p=>p.car_id=null); cardRefresh();
+};
+A.photoPick = async el => {
+  const files=[...el.files]; el.value=''; if(!files.length || card.busy) return;
+  const car_id = $('#photocar')?.value ? +$('#photocar').value : null;
+  card.busy=true; cardRefresh(); let ok=0;
+  try{
+    for(const f of files){
+      const blob = await shrink(f); const path = await db.uploadPhoto(card.id, blob);
+      S.data.client_photos.push(await db.insert('client_photos',{client_id:card.id, car_id, path})); ok++;
+    }
+  } catch(e){ toast(e.message,true); }
+  card.busy=false; if(ok) toast(ok>1?`Загружено фото: ${ok} ✓`:'Фото добавлено ✓'); cardRefresh();
+};
+A.delPhoto = async el => {
+  const id=+el.dataset.id, p=S.data.client_photos.find(x=>x.id===id); if(!confirm('Удалить фото? Это нельзя отменить.')) return;
+  await db.remove('client_photos',id); try{ await db.removeFiles([p.path]); }catch{}
+  S.data.client_photos=S.data.client_photos.filter(x=>x.id!==id); cardRefresh();
 };
