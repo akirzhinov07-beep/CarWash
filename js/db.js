@@ -72,8 +72,13 @@ export const db = {
     if(DEMO){ names.forEach(n => out[n]=[...demo[n]]); return fill(out); }
     const c = await supa();
     await Promise.all(names.map(async n => {
-      let q = c.from(n).select('*'); if(n!=='staff_pay' && n!=='settings') q = q.order('id',{ascending:true});
-      const { data, error } = await q.limit(5000);
+      // Supabase отдаёт не больше 1000 строк за запрос, поэтому читаем страницами
+      let data = [], error = null;
+      for(let from=0; ; from+=1000){
+        let q = c.from(n).select('*'); if(n!=='staff_pay' && n!=='settings') q = q.order('id',{ascending:true});
+        const r = await q.range(from, from+999); error = r.error; if(error) break;
+        data = data.concat(r.data); if(r.data.length<1000 || n==='staff_pay' || n==='settings') break;
+      }
       if(error){
         if(n==='supplies'){ out.supplies = []; out._suppliesMissing = true; return; }
         if(n==='settings'){ out.settings = []; out._settingsMissing = true; return; }
@@ -111,6 +116,12 @@ export const db = {
     const { data, error } = await q.select().single();
     if(error) throw new Error(error.message);
     return data;
+  },
+  async insertMany(table, rows){
+    if(!rows.length) return [];
+    if(DEMO){ const out=rows.map(row=>({...row,id:++demo.seq,created_at:new Date().toISOString()})); demo[table].push(...out); demoSave(); return out; }
+    const c = await supa(); const { data, error } = await c.from(table).insert(rows).select();
+    if(error) throw new Error(error.message); return data;
   },
   async update(table, id, patch, key='id'){
     if(DEMO){ const r=demo[table].find(x=>x[key]===id); Object.assign(r,patch); demoSave(); return r; }

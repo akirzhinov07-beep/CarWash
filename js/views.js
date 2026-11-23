@@ -2,6 +2,7 @@ import { db } from './db.js';
 import { S, $, esc, money, dt, dkey, localInput, toast, modal, countUp, icon, maskPhone, cfg, freeWindows } from './core.js';
 const CATS = ['Мойка','Детейлинг','Химчистка','Полировка','Защита','Прочее'];
 const catRank = c => { const i = CATS.indexOf(c); return i<0 ? 99 : i; };
+import { parseVcf } from './vcf.js';
 import { analyticsView, dashboardView, registerActions } from './analytics.js';
 
 export const NAV = [
@@ -161,7 +162,7 @@ function clientCards(){
     <label class="check" style="margin:4px 0"><input type="checkbox" data-change="togConsent" data-id="${c.id}"${c.marketing_ok?' checked':''}${hasMk()?'':' disabled'}><span class="small">Согласен на сообщения</span></label>${c.note?`<div class="muted small">${esc(c.note)}</div>`:''}</div>`).join('') : '<div class="card empty">Никого не найдено</div>';
 }
 const clientsView = {
-  html(){ return `${S.data._carsMissing?'<div class="card" style="margin-bottom:14px;border-color:var(--warn)"><b>Фото и несколько авто ещё не подключены.</b><p class="muted small" style="margin-top:6px">Откройте в репозитории файл <code>supabase/cars.sql</code>, вставьте в Supabase → SQL Editor и нажмите Run. Затем обновите страницу.</p></div>':''}<div class="head"><h2>Клиенты</h2><button class="btn primary" data-act="newClient">+ Новый клиент</button></div>
+  html(){ return `${S.data._carsMissing?'<div class="card" style="margin-bottom:14px;border-color:var(--warn)"><b>Фото и несколько авто ещё не подключены.</b><p class="muted small" style="margin-top:6px">Откройте в репозитории файл <code>supabase/cars.sql</code>, вставьте в Supabase → SQL Editor и нажмите Run. Затем обновите страницу.</p></div>':''}<div class="head"><h2>Клиенты</h2><div class="row">${isAdmin()&&carsOn()?'<button class="btn" data-act="impOpen">Импорт контактов</button>':''}<button class="btn primary" data-act="newClient">+ Новый клиент</button></div></div>
     <input data-input="clSearch" placeholder="Поиск по ФИО, телефону или авто" value="${esc(cl.q)}" style="margin-bottom:14px;max-width:460px">
     <div class="mcards" id="clcards">${clientCards()}</div>
     <div class="tablewrap dtonly"><table><thead><tr><th>Клиент</th><th>Телефон</th><th>Авто</th><th>Заметка</th><th title="Согласие на сообщения">Рассылка</th>${isAdmin()?'<th>Визитов</th><th>Потрачено</th>':''}<th></th></tr></thead><tbody id="clrows">${clientRows()}</tbody></table></div>`; }
@@ -549,4 +550,57 @@ A.delPhoto = async el => {
   const id=+el.dataset.id, p=S.data.client_photos.find(x=>x.id===id); if(!confirm('Удалить фото? Это нельзя отменить.')) return;
   await db.remove('client_photos',id); try{ await db.removeFiles([p.path]); }catch{}
   S.data.client_photos=S.data.client_photos.filter(x=>x.id!==id); cardRefresh();
+};
+
+/* ================= Импорт контактов (.vcf) ================= */
+const imp = { plan:null, busy:false };
+function impPlan(parsed){
+  const byPh = new Map(S.data.clients.map(c=>[digits(c.phone),c]));
+  const fresh=[], extra=[]; let carsNew=0;
+  for(const g of parsed.groups){
+    const ex = byPh.get(g.phone);
+    if(!ex){ fresh.push(g); carsNew+=g.cars.length; continue; }
+    const have = new Set(carsOf(ex.id).map(k=>normS(k.plate)).filter(Boolean));
+    const add = g.cars.filter(k=>!have.has(normS(k.plate)));
+    if(add.length){ extra.push({client:ex, cars:add}); carsNew+=add.length; }
+  }
+  return { parsed, fresh, extra, carsNew, same: parsed.groups.length-fresh.length-extra.length };
+}
+function impBody(){
+  const p=imp.plan;
+  if(!p) return `<p class="muted">Выберите файл контактов (.vcf), скачанный из телефонной книги. Будут взяты только контакты, у которых в имени есть гос. номер (например «Алим Камри А123ВС») и есть телефон. Файл никуда не отправляется, он разбирается прямо на этом устройстве.</p>
+    <label class="btn primary" style="cursor:pointer">Выбрать файл<input type="file" accept=".vcf,text/vcard,text/x-vcard,text/plain" style="display:none" data-change="impFile"></label>
+    <div class="actions"><button class="btn" data-act="closeModal">Закрыть</button></div>`;
+  const q=p.parsed;
+  return `<p>В файле контактов: <b>${q.total}</b>. С гос. номером и телефоном: <b>${q.matched}</b> (без номера — ${q.noPlate}, без телефона — ${q.noPhone}, они пропущены).</p>
+  <div class="card" style="margin:10px 0"><div>Новых клиентов: <b>${p.fresh.length}</b></div><div>Новых авто всего: <b>${p.carsNew}</b></div>
+  <div>Клиент уже есть в CRM, добавлю только новые авто: <b>${p.extra.length}</b></div><div>Уже есть полностью, пропускаю: <b>${p.same}</b></div></div>
+  <div class="muted small" style="margin-bottom:10px">Например: ${p.fresh.slice(0,4).map(g=>esc((g.name||'Без имени')+' — '+g.cars[0].model+' '+g.cars[0].plate)).join('; ')}</div>
+  ${hasMk()?'<label class="check"><input type="checkbox" id="impmk"><span class="small">Отметить у всех согласие на сообщения (только если клиенты действительно давали согласие)</span></label>':''}
+  <p class="muted small">Названия марок записываются так, как они были в контакте. Их можно поправить в «Авто и фото».</p>
+  <div class="actions"><button class="btn" data-act="closeModal">Отмена</button><button class="btn primary" data-act="impGo"${imp.busy||(!p.fresh.length&&!p.extra.length)?' disabled':''}>${imp.busy?'Импортирую…':'Импортировать'}</button></div>`;
+}
+const impRefresh = () => { const b=$('#impbox'); if(b) b.innerHTML=impBody(); };
+A.impOpen = () => { imp.plan=null; imp.busy=false; const m=modal('<h3>Импорт клиентов из контактов</h3><div id="impbox"></div>'); m.firstElementChild.classList.add('wide'); impRefresh(); };
+A.impFile = async el => {
+  const f=el.files[0]; el.value=''; if(!f) return;
+  const parsed = parseVcf(await f.text());
+  if(!parsed.matched) throw new Error('В файле не нашлось контактов с гос. номером и телефоном');
+  imp.plan = impPlan(parsed); impRefresh();
+};
+A.impGo = async () => {
+  const p=imp.plan; if(imp.busy||!p) return; imp.busy=true; impRefresh();
+  const mk = $('#impmk')?.checked===true; let done=0;
+  try{
+    for(let i=0;i<p.fresh.length;i+=300){
+      const part=p.fresh.slice(i,i+300);
+      const cl = await db.insertMany('clients', part.map(g=>({ name:g.name||'Без имени', phone:maskPhone(g.phone), car:g.cars[0].model, note:'', ...(hasMk()?{marketing_ok:mk}:{}) })));
+      S.data.clients.push(...cl);
+      const cars = []; cl.forEach((c,j)=>part[j].cars.forEach(k=>cars.push({client_id:c.id, model:k.model, plate:k.plate})));
+      S.data.cars.push(...await db.insertMany('cars',cars)); done+=part.length;
+    }
+    const more=[]; p.extra.forEach(e=>e.cars.forEach(k=>more.push({client_id:e.client.id, model:k.model, plate:k.plate})));
+    for(let i=0;i<more.length;i+=300) S.data.cars.push(...await db.insertMany('cars',more.slice(i,i+300)));
+  } catch(e){ imp.busy=false; toast(`Остановлено на ошибке (уже добавлено клиентов: ${done}): ${e.message}`,true); S.render(); return; }
+  imp.busy=false; $('.overlay')?.remove(); toast(`Импорт завершён: клиентов ${p.fresh.length}, авто ${p.carsNew} ✓`); S.render();
 };
