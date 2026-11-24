@@ -1,0 +1,30 @@
+# Автоматическая выгрузка сайта на хостинг (Sprinthost) по FTP при каждом обновлении в main.
+# Работает, только если в GitHub -> Settings -> Secrets and variables -> Actions заданы секреты:
+# FTP_SERVER, FTP_USER, FTP_PASSWORD, FTP_DIR (папка сайта на хостинге, например /ваш-домен.ru/public_html/)
+name: Deploy to FTP
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      HAS_FTP: ${{ secrets.FTP_SERVER != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Upload via FTP
+        if: env.HAS_FTP == 'true'
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USER }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          server-dir: ${{ secrets.FTP_DIR }}
+          exclude: |
+            **/.git*
+            **/.git*/**
+            .github/**
+            supabase/**
+            README.md
+            .nojekyll
