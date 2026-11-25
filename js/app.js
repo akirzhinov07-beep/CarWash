@@ -4,6 +4,7 @@ import { S, $, toast, esc, icon, maskPhone, modal } from './core.js';
 const brand = `<a class="brand homelink" href="./" data-act="home" aria-label="На главную"><b>Бумеранг</b><span>${icon('pin')}Атажукина 2Б</span></a>`;
 
 const root = document.getElementById('root');
+db.warm(); // подготовить соединение с базой, пока пользователь вводит логин
 
 function loginScreen(msg=''){
   root.innerHTML = `
@@ -45,7 +46,11 @@ async function boot(){
     const b=e.target.closest('[data-tab]'); if(b){ S.tab=b.dataset.tab; render(); }
   };
   try{ S.data = await db.loadAll(S.user.role); }catch(err){ toast('Ошибка загрузки: '+err.message,true); S.data = {clients:[],services:[],staff:[],bookings:[],orders:[],staff_pay:[]}; }
+  S.data.clients = []; S.data.cars = []; S.data.client_photos = []; S.data._clientsLoading = true;
   render();
+  // клиентов и авто — тысячи, поэтому догружаем их фоном, когда главная уже открыта
+  db.loadClients().then(x=>Object.assign(S.data,x)).catch(err=>toast('Не удалось загрузить клиентов: '+err.message,true))
+    .finally(()=>{ S.data._clientsLoading = false; if(S.tab==='clients') render(); else if(S.tab==='record') views.record.sync?.(); });
 }
 
 export function render(){

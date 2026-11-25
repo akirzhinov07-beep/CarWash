@@ -9,7 +9,7 @@ const ADMIN_ONLY = ['orders','staff_pay','supplies','profiles'];
 
 async function supa(){
   if(sb) return sb;
-  const { createClient } = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm');
+  const { createClient } = await import('../vendor/supabase.js');
   sb = createClient(SUPABASE_URL, SUPABASE_KEY, { auth:{ persistSession:true, autoRefreshToken:true } });
   return sb;
 }
@@ -41,10 +41,12 @@ const demoSave = () => localStorage.setItem(LS, JSON.stringify(demo));
 
 /* ---------- публичный API ---------- */
 export const db = {
+  warm(){ if(!DEMO) supa().catch(()=>{}); },
   async session(){
     if(DEMO) return demo.user;
     const c = await supa(); const { data } = await c.auth.getSession();
     if(!data.session) return null;
+    db.startLoad();
     return loadProfile(c, data.session.user);
   },
   async signIn(login, pass){
@@ -62,32 +64,28 @@ export const db = {
       if(m.includes('fetch') || m.includes('network')) throw new Error('Нет связи с базой. Проверьте интернет или VPN');
       throw new Error('Неверный логин или пароль');
     }
+    db.startLoad();
     return loadProfile(c, data.user);
   },
   async signOut(){ if(DEMO){ demo.user=null; demoSave(); return; } const c=await supa(); await c.auth.signOut(); },
 
+  // Данные грузятся параллельно. Клиенты и авто (их тысячи) — отдельным вторым шагом, чтобы главная открывалась сразу.
+  startLoad(){ if(!DEMO && !this._pre) this._pre = loadCore(); },
   async loadAll(role){
     const out = {};
-    const names = T.filter(t => role==='admin' || !ADMIN_ONLY.includes(t));
-    if(DEMO){ names.forEach(n => out[n]=[...demo[n]]); return fill(out); }
-    const c = await supa();
-    await Promise.all(names.map(async n => {
-      // Supabase отдаёт не больше 1000 строк за запрос, поэтому читаем страницами
-      let data = [], error = null;
-      for(let from=0; ; from+=1000){
-        let q = c.from(n).select('*'); if(n!=='staff_pay' && n!=='settings') q = q.order('id',{ascending:true});
-        const r = await q.range(from, from+999); error = r.error; if(error) break;
-        data = data.concat(r.data); if(r.data.length<1000 || n==='staff_pay' || n==='settings') break;
-      }
-      if(error){
-        if(n==='supplies'){ out.supplies = []; out._suppliesMissing = true; return; }
-        if(n==='settings'){ out.settings = []; out._settingsMissing = true; return; }
-        if(n==='cars' || n==='client_photos'){ out[n] = []; out._carsMissing = true; return; }
-        throw new Error(error.message);
-      }
-      out[n] = data;
-    }));
+    const names = T.filter(t => (role==='admin' || !ADMIN_ONLY.includes(t)) && !HEAVY.includes(t));
+    if(DEMO){ names.forEach(n => out[n]=[...demo[n]]); out.clients=[]; out.cars=[]; out.client_photos=[]; return fill(out); }
+    const got = await (this._pre || loadCore()); this._pre = null;
+    names.forEach(n => { out[n] = got[n]; }); Object.assign(out, got._flags);
     return fill(out);
+  },
+  async loadClients(){
+    if(DEMO) return { clients:[...demo.clients], cars:[...demo.cars], _carsMissing:false };
+    const c = await supa(), out = {};
+    const [cl, ca] = await Promise.all([fetchAll(c,'clients'), fetchAll(c,'cars')]);
+    if(cl.error) throw new Error(cl.error.message);
+    out.clients = cl.data; out.cars = ca.error ? [] : ca.data; out._carsMissing = !!ca.error;
+    return out;
   },
   async list(table){
     if(DEMO) return [...demo[table]];
@@ -107,6 +105,11 @@ export const db = {
     }
     const c = await supa(); const { error } = await c.rpc(name, args);
     if(error) throw new Error(error.message);
+  },
+  async listWhere(table, col, val){
+    if(DEMO) return demo[table].filter(x=>x[col]===val);
+    const c = await supa(); const { data, error } = await c.from(table).select('*').eq(col,val).order('id',{ascending:true});
+    if(error) throw new Error(error.message); return data;
   },
   async insert(table, row, returning=true){
     if(DEMO){ const r={...(table==='bookings'?{status:'pending',pay_type:null}:{}),...row,id:++demo.seq,created_at:row.created_at||new Date().toISOString()}; demo[table].push(r); demoSave(); return r; }
@@ -171,6 +174,32 @@ export const db = {
 };
 const fill = o => { T.forEach(t => o[t] = o[t] || []); return o; };
 
+const HEAVY = ['clients','cars','client_photos'];
+const PAGE = 1000; // Supabase отдаёт не больше 1000 строк за запрос
+async function fetchAll(c, n){
+  const ordered = n!=='staff_pay' && n!=='settings';
+  const mk = () => { let q = c.from(n).select('*'); return ordered ? q.order('id',{ascending:true}) : q; };
+  const first = await (ordered ? c.from(n).select('*',{count:'exact'}).order('id',{ascending:true}) : c.from(n).select('*',{count:'exact'})).range(0, PAGE-1);
+  if(first.error || !ordered) return first;
+  const total = first.count ?? first.data.length; if(total <= PAGE) return first;
+  const jobs = []; for(let from=PAGE; from<total; from+=PAGE) jobs.push(mk().range(from, from+PAGE-1));
+  const rest = await Promise.all(jobs), bad = rest.find(r=>r.error); if(bad) return bad;
+  return { data: first.data.concat(...rest.map(r=>r.data)), error:null };
+}
+async function loadCore(){
+  const c = await supa(), out = { _flags:{} };
+  await Promise.all(T.filter(t=>!HEAVY.includes(t)).map(async n => {
+    const r = await fetchAll(c, n);
+    if(r.error){
+      if(n==='supplies'){ out.supplies = []; out._flags._suppliesMissing = true; return; }
+      if(n==='settings'){ out.settings = []; out._flags._settingsMissing = true; return; }
+      if(ADMIN_ONLY.includes(n)){ out[n] = []; return; }
+      throw new Error(r.error.message);
+    }
+    out[n] = r.data;
+  }));
+  return out;
+}
 async function loadProfile(c, user){
   const { data, error } = await c.from('profiles').select('full_name,role').eq('id',user.id).single();
   if(error || !data){ await c.auth.signOut(); throw new Error('Профиль не найден. Обратитесь к администратору.'); }

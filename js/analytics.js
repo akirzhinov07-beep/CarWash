@@ -1,4 +1,4 @@
-import { S, $, esc, money, dt, dkey, countUp, freeWindows, icon } from './core.js';
+import { S, $, esc, money, dt, dkey, countUp, freeWindows, icon, lib, toast } from './core.js';
 
 const PAYN = { cash:'Наличными', card:'Безналичная' };
 const pct = id => S.data.staff_pay.find(p=>p.staff_id===id)?.percent ?? 0;
@@ -44,7 +44,7 @@ function donut(el, rows, key='rev', label='name'){
 }
 const kpi = (l,v) => `<div class="card kpi"><span class="lbl">${l}</span><b data-count="${v}">${money(v)}</b></div>`;
 const animateKpis = () => document.querySelectorAll('[data-count]').forEach(el=>countUp(el,+el.dataset.count));
-const waitChart = (fn,n=0) => typeof Chart!=='undefined' ? fn() : n<60 && setTimeout(()=>waitChart(fn,n+1),100);
+const waitChart = fn => { const tab=S.tab; lib('chart').then(()=>{ if(S.tab===tab) fn(); }).catch(e=>toast(e.message,true)); };
 
 /* ---------- ГЛАВНАЯ ---------- */
 export const dashboardView = {
@@ -104,8 +104,8 @@ act.range = el => { A.range=el.dataset.r; if(A.range==='custom'&&!A.from){ const
 act.aSup = el => { A.sup = el.checked; S.render(); };
 act.atab = el => { A.tab=el.dataset.t; S.render(); };
 act.aDate = () => { A.from=$('#df').value; A.to=$('#dtt').value; S.render(); };
-act.xlsx = () => {
-  if(typeof XLSX==='undefined') throw new Error('Библиотека Excel не загружена');
+act.xlsx = async () => {
+  await lib('xlsx');
   const p=period(), arr=inRange(p), t=sum(arr), wb=XLSX.utils.book_new(), add=(n,rows)=>XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(rows.length?rows:[{'':'Нет данных'}]),n);
   add('Сводка',[{Показатель:'Период',Значение:p[0].toLocaleDateString('ru-RU')+' — '+p[1].toLocaleDateString('ru-RU')},{Показатель:'Выручка',Значение:t.rev},{Показатель:'Зарплаты',Значение:t.sal},{Показатель:'Остальной доход',Значение:t.profit},{Показатель:'Заказов',Значение:t.n},{Показатель:'Средний чек',Значение:Math.round(t.avg)}].concat(A.sup?[{Показатель:'Расходники',Значение:suppliesIn(p).reduce((s,x)=>s+x.qty*x.unit_price,0)},{Показатель:'Чистая прибыль (доход − расходники)',Значение:t.profit-suppliesIn(p).reduce((s,x)=>s+x.qty*x.unit_price,0)}]:[]));
   add('По дням',perDay(arr,p).map(d=>({Дата:d.k,Заказов:d.n,Выручка:d.rev,Зарплаты:d.sal,'Остальной доход':d.profit})));

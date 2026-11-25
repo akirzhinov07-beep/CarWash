@@ -5,16 +5,23 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>CarwasH — CRM автомойки</title>
 <meta name="robots" content="noindex">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/app.css?v=20261125-4">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<link rel="stylesheet" href="css/app.css?v=20261125-5">
+<!-- шрифт подгружается фоном и не задерживает показ страницы -->
+<link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&display=swap" onload="this.onload=null;this.rel='stylesheet'">
+<noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&display=swap"></noscript>
+<script type="importmap">{"imports":{"./js/app.js":"./js/app.js?v=20261125-5","./js/core.js":"./js/core.js?v=20261125-5","./js/db.js":"./js/db.js?v=20261125-5","./js/views.js":"./js/views.js?v=20261125-5","./js/analytics.js":"./js/analytics.js?v=20261125-5","./js/config.js":"./js/config.js?v=20261125-5","./js/vcf.js":"./js/vcf.js?v=20261125-5","./vendor/supabase.js":"./vendor/supabase.js?v=20261125-5"}}</script>
+<link rel="modulepreload" href="js/app.js?v=20261125-5">
+<link rel="modulepreload" href="js/core.js?v=20261125-5">
+<link rel="modulepreload" href="js/db.js?v=20261125-5">
+<link rel="modulepreload" href="js/views.js?v=20261125-5">
+<link rel="modulepreload" href="js/analytics.js?v=20261125-5">
+<link rel="modulepreload" href="js/config.js?v=20261125-5">
+<link rel="modulepreload" href="js/vcf.js?v=20261125-5">
+<link rel="modulepreload" href="vendor/supabase.js?v=20261125-5">
 </head>
 <body>
 <div id="root"></div>
 <div class="toasts" id="toasts" aria-live="polite"></div>
-<script type="importmap">{"imports":{"./js/app.js":"./js/app.js?v=20261125-4","./js/core.js":"./js/core.js?v=20261119-7","./js/db.js":"./js/db.js?v=20261119-7","./js/views.js":"./js/views.js?v=20261119-7","./js/analytics.js":"./js/analytics.js?v=20261119-7","./js/config.js":"./js/config.js?v=20261119-7"}}</script>
-<script type="module" src="js/app.js?v=20261125-4"></script>
+<script type="module" src="js/app.js?v=20261125-5"></script>
 </body>
 </html>

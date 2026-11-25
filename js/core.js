@@ -1,3 +1,11 @@
+// Тяжёлые библиотеки (графики, Excel) подгружаются только когда нужны, с нашего же сайта
+const VER = new URL(import.meta.url).searchParams.get('v') || '';
+const LIBS = { chart:['vendor/chart.umd.js','Chart'], xlsx:['vendor/xlsx.full.min.js','XLSX'] }, _lib = {};
+export const lib = name => _lib[name] || (_lib[name] = new Promise((ok,no)=>{
+  const [src,g] = LIBS[name]; if(window[g]) return ok(window[g]);
+  const s = document.createElement('script'); s.src = `${src}?v=${VER}`; s.onload = () => ok(window[g]);
+  s.onerror = () => { delete _lib[name]; no(new Error('Не удалось загрузить библиотеку. Проверьте интернет')); }; document.head.appendChild(s);
+}));
 export const S = { user:null, tab:'', data:null, render:()=>{} };
 export const $ = (s, r=document) => r.querySelector(s);
 export const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));

@@ -167,7 +167,7 @@ function clUpdate(){ const b=clBody(), r=$('#clrows'); if(!r) return; r.innerHTM
 const clientsView = {
   html(){ return `${S.data._carsMissing?'<div class="card" style="margin-bottom:14px;border-color:var(--warn)"><b>Фото и несколько авто ещё не подключены.</b><p class="muted small" style="margin-top:6px">Откройте в репозитории файл <code>supabase/cars.sql</code>, вставьте в Supabase → SQL Editor и нажмите Run. Затем обновите страницу.</p></div>':''}<div class="head"><h2>Клиенты</h2><div class="row">${isAdmin()&&carsOn()?'<button class="btn" data-act="impOpen">Импорт контактов</button>':''}<button class="btn primary" data-act="newClient">+ Новый клиент</button></div></div>
     <input data-input="clSearch" placeholder="Поиск по ФИО, телефону или авто" value="${esc(cl.q)}" style="margin-bottom:14px;max-width:460px">
-    ${(()=>{ cl.b=clBody(); return ''; })()}<div class="mcards" id="clcards">${cl.b.cards}</div>
+    ${(()=>{ cl.b=S.data._clientsLoading?{rows:'<tr><td colspan="8" class="empty">Загружаем клиентов…</td></tr>',cards:'<div class="card empty">Загружаем клиентов…</div>',foot:''}:clBody(); return ''; })()}<div class="mcards" id="clcards">${cl.b.cards}</div>
     <div class="tablewrap dtonly"><table><thead><tr><th>Клиент</th><th>Телефон</th><th>Авто</th><th>Заметка</th><th title="Согласие на сообщения">Рассылка</th>${isAdmin()?'<th>Визитов</th><th>Потрачено</th>':''}<th></th></tr></thead><tbody id="clrows">${cl.b.rows}</tbody></table></div><div id="clfoot">${cl.b.foot}</div>`; }
 };
 
@@ -254,6 +254,7 @@ A.recTime = el => { if(el.value){ rec.time=el.value; refreshWhen(); } };
 A.togSvc = el => { const id=+el.dataset.id; rec.svcs.has(id)?rec.svcs.delete(id):rec.svcs.add(id); el.classList.toggle('on'); recView.sync(); };
 A.unpick = () => { rec.client=null; rec.carId=null; recView.sync(); };
 A.recSearch = el => {
+  if(S.data._clientsLoading){ $('#sugg').innerHTML='<p class="muted small" style="margin-top:6px">Загружаем клиентов…</p>'; return; }
   const q=el.value.trim().toLowerCase(), qd=digits(el.value), box=$('#sugg');
   if(q.length<2){ box.innerHTML=''; return; }
   const r = S.data.clients.filter(c=>c.name.toLowerCase().includes(q)||(qd.length>=3&&digits(c.phone).includes(qd))||carHay(c).toLowerCase().includes(q)).slice(0,6);
@@ -276,6 +277,7 @@ A.pickClient = el => {
   f.name.value=c.name; f.phone.value=maskPhone(c.phone); fillCar(f,c); $('#sugg').innerHTML=''; $('#rq').value=''; recView.sync();
 };
 A.saveBooking = async f => {
+  if(S.data._clientsLoading) throw new Error('Клиенты ещё загружаются, подождите пару секунд и повторите');
   const name=f.name.value.trim(), phone=f.phone.value.trim(), car=f.car.value.trim(), plate=f.plate?f.plate.value.trim().toUpperCase():'';
   if(digits(phone).length!==11) throw new Error('Введите номер полностью: +7 (900) 000-00-00');
   if(!rec.svcs.size) throw new Error('Выберите хотя бы одну услугу');
@@ -471,6 +473,7 @@ function waBody(){
 }
 function waRefresh(){ const m=$('#wabox'); if(m) m.innerHTML=waBody(); }
 A.waOpen = () => {
+  if(S.data._clientsLoading) throw new Error('Клиенты ещё загружаются, подождите пару секунд');
   const w = freeWindows(waDate()).sort((a,b)=>b.mins-a.mins)[0]; if(w){ wa.from=w.from; wa.to=w.to; }
   wa.edited=false; wa.sent=new Set();
   const m = modal(`<h3>Оповестить в WhatsApp</h3><div id="wabox">${waBody()}</div>`); m.firstElementChild.classList.add('wide');
@@ -501,6 +504,7 @@ async function shrink(file, max=1280){
   } finally { URL.revokeObjectURL(url); }
 }
 function photoGrid(){
+  if(card.loading) return '<p class="muted small">Загрузка фото…</p>';
   const ph = S.data.client_photos.filter(p=>p.client_id===card.id).slice().reverse();
   if(!ph.length) return '<p class="muted small">Фотографий пока нет</p>';
   return `<div class="photos">${ph.map(p=>{ const k=S.data.cars.find(x=>x.id===p.car_id), u=card.urls[p.path];
@@ -529,7 +533,11 @@ async function cardRefresh(){
   const need=S.data.client_photos.filter(p=>p.client_id===card.id && !card.urls[p.path]).map(p=>p.path);
   if(need.length){ try{ Object.assign(card.urls, await db.photoUrls(need)); }catch(e){ toast(e.message,true); } const g=$('#photogrid'); if(g) g.innerHTML=photoGrid(); }
 }
-A.openCard = el => { card.id=+el.dataset.id; card.edit=null; const m=modal('<div id="cardbox"></div>'); m.firstElementChild.classList.add('wide'); cardRefresh(); };
+A.openCard = async el => {
+  card.id=+el.dataset.id; card.edit=null; card.loading=true; const m=modal('<div id="cardbox"></div>'); m.firstElementChild.classList.add('wide'); cardRefresh();
+  try{ const ph=await db.listWhere('client_photos','client_id',card.id); S.data.client_photos=S.data.client_photos.filter(p=>p.client_id!==card.id).concat(ph); }catch(e){ toast(e.message,true); }
+  card.loading=false; cardRefresh();
+};
 A.carEdit = el => { card.edit=+el.dataset.id; cardRefresh(); };
 A.carEditCancel = () => { card.edit=null; cardRefresh(); };
 A.carSave = async f => {
@@ -592,7 +600,8 @@ function impBody(){
   <div class="actions"><button class="btn" data-act="closeModal">Отмена</button><button class="btn primary" data-act="impGo"${imp.busy||(!p.fresh.length&&!p.extra.length)?' disabled':''}>${imp.busy?'Импортирую…':'Импортировать'}</button></div>`;
 }
 const impRefresh = () => { const b=$('#impbox'); if(b) b.innerHTML=impBody(); };
-A.impOpen = () => { imp.plan=null; imp.busy=false; const m=modal('<h3>Импорт клиентов из контактов</h3><div id="impbox"></div>'); m.firstElementChild.classList.add('wide'); impRefresh(); };
+A.impOpen = () => {
+  if(S.data._clientsLoading) throw new Error('Клиенты ещё загружаются, подождите пару секунд'); imp.plan=null; imp.busy=false; const m=modal('<h3>Импорт клиентов из контактов</h3><div id="impbox"></div>'); m.firstElementChild.classList.add('wide'); impRefresh(); };
 A.impFile = async el => {
   const f=el.files[0]; el.value=''; if(!f) return;
   const parsed = parseVcf(await f.text());
