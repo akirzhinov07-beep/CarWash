@@ -27,6 +27,21 @@ const plateTag = p => p ? `<span class="plate">${esc(p)}</span>` : '';
 const carsText = c => { const ks=carsOf(c.id); return ks.length ? ks.map(k=>`${esc(k.model)} ${plateTag(k.plate)}`).join('<br>') : esc(c.car||'—'); };
 const carShort = c => { const ks=carsOf(c.id); return ks.length ? ks.map(k=>k.model+(k.plate?' '+k.plate:'')).join(', ') : (c.car||''); };
 const carHay = c => (c.car||'')+' '+carsOf(c.id).map(k=>k.model+' '+(k.plate||'')).join(' ');
+const LAT2CYR = { A:'А', B:'В', E:'Е', K:'К', M:'М', H:'Н', O:'О', P:'Р', C:'С', T:'Т', Y:'У', X:'Х' };
+const plateKey = p => String(p||'').toUpperCase().replace(/[A-Z]/g, ch=>LAT2CYR[ch]||ch).replace(/[^А-ЯЁ0-9]/g,'');
+// Умный поиск клиента: 3 цифры = ровно цифры гос. номера (не телефон и не регион), 4+ цифры = телефон или номер, текст = имя/авто/заметка/номер
+function clientMatcher(q){
+  q = String(q||'').trim().toLowerCase(); if(!q) return () => true;
+  const qd = digits(q), onlyDigits = /^[\d\s()+-]+$/.test(q), pk = plateKey(q);
+  const plates = c => carsOf(c.id).map(k=>k.plate).filter(Boolean);
+  if(onlyDigits){
+    if(qd.length < 3) return () => false;
+    if(qd.length === 3) return c => plates(c).some(p => (String(p).match(/\d{3}/)||[])[0] === qd);
+    return c => digits(c.phone).includes(qd) || plates(c).some(p => plateKey(p).includes(qd));
+  }
+  return c => c.name.toLowerCase().includes(q) || carHay(c).toLowerCase().includes(q) || (c.note||'').toLowerCase().includes(q)
+    || (pk.length>=3 && plates(c).some(p => plateKey(p).includes(pk))) || (qd.length>=4 && digits(c.phone).includes(qd));
+}
 const carLine = b => esc(b.car)+(b.plate?' '+plateTag(b.plate):'');
 const normS = s => String(s||'').replace(/\s+/g,'').toLowerCase();
 async function ensureCar(client, model, plate){
@@ -88,7 +103,7 @@ const recView = {
     <form data-form="saveBooking" class="grid g-rec" autocomplete="off">
       <div class="card stagger"><h3>1. Клиент</h3>
         <div id="picked"></div>
-        <label class="field" style="margin-top:0"><span>Поиск по имени, телефону или авто</span><input data-input="recSearch" id="rq" placeholder="Начните вводить…"></label>
+        <label class="field" style="margin-top:0"><span>Поиск: имя, телефон, авто или 3 цифры гос. номера</span><input data-input="recSearch" id="rq" placeholder="Начните вводить…"></label>
         <div id="sugg"></div>
         <div class="f2"><label class="field"><span>Имя клиента</span><input name="name" required></label>
         <label class="field"><span>Телефон *</span><input name="phone" type="tel" inputmode="tel" placeholder="+7 (900) 000-00-00" data-phone data-input="recPhone" required></label></div>
@@ -146,10 +161,7 @@ const bookingsView = {
 /* ================= КЛИЕНТЫ ================= */
 const cl = { q:'', limit:50, t:null };
 const cardBtn = c => carsOn() ? `<button class="btn sm" data-act="openCard" data-id="${c.id}">Авто и фото</button>` : '';
-function clList(){
-  const q = cl.q.trim().toLowerCase(), qd = digits(cl.q);
-  return S.data.clients.filter(c => !q || c.name.toLowerCase().includes(q) || (qd && digits(c.phone).includes(qd)) || carHay(c).toLowerCase().includes(q)).reverse();
-}
+function clList(){ return S.data.clients.filter(clientMatcher(cl.q)).reverse(); }
 function ordStat(){ const m=new Map(); for(const o of S.data.orders){ const k=digits(o.phone), v=m.get(k)||[0,0]; v[0]++; v[1]+=o.total; m.set(k,v); } return m; }
 function clBody(){
   const all = clList(), shown = all.slice(0, cl.limit), st = isAdmin() ? ordStat() : null;
@@ -166,7 +178,7 @@ function clBody(){
 function clUpdate(){ const b=clBody(), r=$('#clrows'); if(!r) return; r.innerHTML=b.rows; const m=$('#clcards'); if(m) m.innerHTML=b.cards; const f=$('#clfoot'); if(f) f.innerHTML=b.foot; }
 const clientsView = {
   html(){ return `${S.data._carsMissing?'<div class="card" style="margin-bottom:14px;border-color:var(--warn)"><b>Фото и несколько авто ещё не подключены.</b><p class="muted small" style="margin-top:6px">Откройте в репозитории файл <code>supabase/cars.sql</code>, вставьте в Supabase → SQL Editor и нажмите Run. Затем обновите страницу.</p></div>':''}<div class="head"><h2>Клиенты</h2><div class="row">${isAdmin()&&carsOn()?'<button class="btn" data-act="impOpen">Импорт контактов</button>':''}<button class="btn primary" data-act="newClient">+ Новый клиент</button></div></div>
-    <input data-input="clSearch" placeholder="Поиск по ФИО, телефону или авто" value="${esc(cl.q)}" style="margin-bottom:14px;max-width:460px">
+    <input data-input="clSearch" placeholder="ФИО, телефон, авто или 3 цифры гос. номера" value="${esc(cl.q)}" style="margin-bottom:14px;max-width:460px">
     ${(()=>{ cl.b=S.data._clientsLoading?{rows:'<tr><td colspan="8" class="empty">Загружаем клиентов…</td></tr>',cards:'<div class="card empty">Загружаем клиентов…</div>',foot:''}:clBody(); return ''; })()}<div class="mcards" id="clcards">${cl.b.cards}</div>
     <div class="tablewrap dtonly"><table><thead><tr><th>Клиент</th><th>Телефон</th><th>Авто</th><th>Заметка</th><th title="Согласие на сообщения">Рассылка</th>${isAdmin()?'<th>Визитов</th><th>Потрачено</th>':''}<th></th></tr></thead><tbody id="clrows">${cl.b.rows}</tbody></table></div><div id="clfoot">${cl.b.foot}</div>`; }
 };
@@ -255,9 +267,9 @@ A.togSvc = el => { const id=+el.dataset.id; rec.svcs.has(id)?rec.svcs.delete(id)
 A.unpick = () => { rec.client=null; rec.carId=null; recView.sync(); };
 A.recSearch = el => {
   if(S.data._clientsLoading){ $('#sugg').innerHTML='<p class="muted small" style="margin-top:6px">Загружаем клиентов…</p>'; return; }
-  const q=el.value.trim().toLowerCase(), qd=digits(el.value), box=$('#sugg');
+  const q=el.value.trim(), box=$('#sugg');
   if(q.length<2){ box.innerHTML=''; return; }
-  const r = S.data.clients.filter(c=>c.name.toLowerCase().includes(q)||(qd.length>=3&&digits(c.phone).includes(qd))||carHay(c).toLowerCase().includes(q)).slice(0,6);
+  const r = S.data.clients.filter(clientMatcher(q)).slice(0,6);
   box.innerHTML = r.length? `<div class="suggest">${r.map(c=>`<button type="button" data-act="pickClient" data-id="${c.id}"><span><b>${esc(c.name)}</b> · ${esc(carShort(c))}</span><span class="muted">${esc(c.phone)}</span></button>`).join('')}</div>` : '<p class="muted small" style="margin-top:6px">Не найден — заполните данные ниже, клиент сохранится автоматически</p>';
 };
 A.recPhone = el => {
