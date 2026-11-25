@@ -21,7 +21,8 @@ const isAdmin = () => S.user.role==='admin';
 const hasMk = () => !S.data.clients.length || 'marketing_ok' in S.data.clients[0];
 const waLink = (phone,text='') => digits(phone).length===11 ? `<a class="waicon" title="Написать в WhatsApp" aria-label="WhatsApp" href="https://wa.me/${digits(phone)}${text?'?text='+encodeURIComponent(text):''}" target="_blank" rel="noopener">${icon('chat')}</a>` : '';
 const carsOn = () => !S.data._carsMissing;
-const carsOf = id => (S.data.cars||[]).filter(k=>k.client_id===id);
+let _ci = null; // индекс авто по клиенту (чтобы список из тысяч клиентов не тормозил)
+const carsOf = id => { const a=S.data.cars||[]; if(!_ci||_ci.a!==a||_ci.n!==a.length){ const m=new Map(); a.forEach(k=>{ let l=m.get(k.client_id); if(!l) m.set(k.client_id,l=[]); l.push(k); }); _ci={a,n:a.length,m}; } return _ci.m.get(id)||[]; };
 const plateTag = p => p ? `<span class="plate">${esc(p)}</span>` : '';
 const carsText = c => { const ks=carsOf(c.id); return ks.length ? ks.map(k=>`${esc(k.model)} ${plateTag(k.plate)}`).join('<br>') : esc(c.car||'—'); };
 const carShort = c => { const ks=carsOf(c.id); return ks.length ? ks.map(k=>k.model+(k.plate?' '+k.plate:'')).join(', ') : (c.car||''); };
@@ -143,41 +144,48 @@ const bookingsView = {
 };
 
 /* ================= КЛИЕНТЫ ================= */
-const cl = { q:'' };
+const cl = { q:'', limit:50, t:null };
 const cardBtn = c => carsOn() ? `<button class="btn sm" data-act="openCard" data-id="${c.id}">Авто и фото</button>` : '';
-function clientRows(){
+function clList(){
   const q = cl.q.trim().toLowerCase(), qd = digits(cl.q);
-  const list = S.data.clients.filter(c => !q || c.name.toLowerCase().includes(q) || (qd && digits(c.phone).includes(qd)) || carHay(c).toLowerCase().includes(q)).slice().reverse();
-  const stat = c => { const o=S.data.orders.filter(o=>digits(o.phone)===digits(c.phone)); return [o.length,o.reduce((s,x)=>s+x.total,0)]; };
-  return list.length? list.map(c=>{ const [n,sum]=isAdmin()?stat(c):[0,0]; return `<tr><td><b>${esc(c.name)}</b></td><td>${esc(c.phone)}${waLink(c.phone)}</td><td>${carsText(c)}</td><td class="muted">${esc(c.note||'')}</td>
+  return S.data.clients.filter(c => !q || c.name.toLowerCase().includes(q) || (qd && digits(c.phone).includes(qd)) || carHay(c).toLowerCase().includes(q)).reverse();
+}
+function ordStat(){ const m=new Map(); for(const o of S.data.orders){ const k=digits(o.phone), v=m.get(k)||[0,0]; v[0]++; v[1]+=o.total; m.set(k,v); } return m; }
+function clBody(){
+  const all = clList(), shown = all.slice(0, cl.limit), st = isAdmin() ? ordStat() : null;
+  const rows = shown.length ? shown.map(c=>{ const [n,sum]=st?(st.get(digits(c.phone))||[0,0]):[0,0]; return `<tr><td><b>${esc(c.name)}</b></td><td>${esc(c.phone)}${waLink(c.phone)}</td><td>${carsText(c)}</td><td class="muted">${esc(c.note||'')}</td>
     <td><input type="checkbox" title="Согласие на сообщения" data-change="togConsent" data-id="${c.id}"${c.marketing_ok?' checked':''}${hasMk()?'':' disabled'}></td>
     ${isAdmin()?`<td class="num">${n}</td><td class="num">${money(sum)}</td>`:''}<td class="right" style="white-space:nowrap">${cardBtn(c)}${isAdmin()?`<button class="btn sm" data-act="editClient" data-id="${c.id}">Изменить</button>`:''}</td></tr>`; }).join('')
     : `<tr><td colspan="8" class="empty">Никого не найдено</td></tr>`;
-}
-function clientCards(){
-  const q = cl.q.trim().toLowerCase(), qd = digits(cl.q);
-  const list = S.data.clients.filter(c => !q || c.name.toLowerCase().includes(q) || (qd && digits(c.phone).includes(qd)) || carHay(c).toLowerCase().includes(q)).slice().reverse();
-  return list.length ? list.map(c=>`<div class="mcard"><div class="mrow"><b>${esc(c.name)}</b><span class="row">${cardBtn(c)}${isAdmin()?`<button class="btn sm" data-act="editClient" data-id="${c.id}">Изменить</button>`:''}</span></div>
+  const cards = shown.length ? shown.map(c=>`<div class="mcard"><div class="mrow"><b>${esc(c.name)}</b><span class="row">${cardBtn(c)}${isAdmin()?`<button class="btn sm" data-act="editClient" data-id="${c.id}">Изменить</button>`:''}</span></div>
     <div><a href="tel:${esc(c.phone)}">${esc(c.phone)}</a>${waLink(c.phone)}</div><div>${carsText(c)}</div>
     <label class="check" style="margin:4px 0"><input type="checkbox" data-change="togConsent" data-id="${c.id}"${c.marketing_ok?' checked':''}${hasMk()?'':' disabled'}><span class="small">Согласен на сообщения</span></label>${c.note?`<div class="muted small">${esc(c.note)}</div>`:''}</div>`).join('') : '<div class="card empty">Никого не найдено</div>';
+  const foot = all.length ? `<div class="clfoot"><span class="muted small">Показано ${shown.length} из ${all.length}${all.length>shown.length?'. Остальных найдите через поиск.':''}</span>${all.length>shown.length?'<button class="btn" data-act="clMore">Показать ещё</button>':''}</div>` : '';
+  return { rows, cards, foot };
 }
+function clUpdate(){ const b=clBody(), r=$('#clrows'); if(!r) return; r.innerHTML=b.rows; const m=$('#clcards'); if(m) m.innerHTML=b.cards; const f=$('#clfoot'); if(f) f.innerHTML=b.foot; }
 const clientsView = {
   html(){ return `${S.data._carsMissing?'<div class="card" style="margin-bottom:14px;border-color:var(--warn)"><b>Фото и несколько авто ещё не подключены.</b><p class="muted small" style="margin-top:6px">Откройте в репозитории файл <code>supabase/cars.sql</code>, вставьте в Supabase → SQL Editor и нажмите Run. Затем обновите страницу.</p></div>':''}<div class="head"><h2>Клиенты</h2><div class="row">${isAdmin()&&carsOn()?'<button class="btn" data-act="impOpen">Импорт контактов</button>':''}<button class="btn primary" data-act="newClient">+ Новый клиент</button></div></div>
     <input data-input="clSearch" placeholder="Поиск по ФИО, телефону или авто" value="${esc(cl.q)}" style="margin-bottom:14px;max-width:460px">
-    <div class="mcards" id="clcards">${clientCards()}</div>
-    <div class="tablewrap dtonly"><table><thead><tr><th>Клиент</th><th>Телефон</th><th>Авто</th><th>Заметка</th><th title="Согласие на сообщения">Рассылка</th>${isAdmin()?'<th>Визитов</th><th>Потрачено</th>':''}<th></th></tr></thead><tbody id="clrows">${clientRows()}</tbody></table></div>`; }
+    ${(()=>{ cl.b=clBody(); return ''; })()}<div class="mcards" id="clcards">${cl.b.cards}</div>
+    <div class="tablewrap dtonly"><table><thead><tr><th>Клиент</th><th>Телефон</th><th>Авто</th><th>Заметка</th><th title="Согласие на сообщения">Рассылка</th>${isAdmin()?'<th>Визитов</th><th>Потрачено</th>':''}<th></th></tr></thead><tbody id="clrows">${cl.b.rows}</tbody></table></div><div id="clfoot">${cl.b.foot}</div>`; }
 };
 
 /* ================= УСЛУГИ / СОТРУДНИКИ ================= */
 const servicesView = {
   html(){ return `<div class="head"><h2>Услуги</h2><button class="btn primary" data-act="editService" data-id="">+ Услуга</button></div>
-    <div class="tablewrap"><table><thead><tr><th>Название</th><th>Категория</th><th class="right">Цена</th><th>Время</th><th>Статус</th><th></th></tr></thead><tbody>
+    <div class="mcards">${S.data.services.map(s=>`<div class="mcard"><div class="mrow"><b>${esc(s.name)}</b><button class="btn sm" data-act="editService" data-id="${s.id}">Изменить</button></div>
+      <div class="muted small">${esc(s.category)} · ${s.minutes} мин</div><div class="mrow"><b class="num">${money(s.price)}</b><span class="pill ${s.active?'p-ok':'p-warn'}">${s.active?'Активна':'Скрыта'}</span></div></div>`).join('')}</div>
+    <div class="tablewrap dtonly"><table><thead><tr><th>Название</th><th>Категория</th><th class="right">Цена</th><th>Время</th><th>Статус</th><th></th></tr></thead><tbody>
     ${S.data.services.map(s=>`<tr><td><b>${esc(s.name)}</b></td><td>${esc(s.category)}</td><td class="right num">${money(s.price)}</td><td>${s.minutes} мин</td>
     <td><span class="pill ${s.active?'p-ok':'p-warn'}">${s.active?'Активна':'Скрыта'}</span></td><td class="right"><button class="btn sm" data-act="editService" data-id="${s.id}">Изменить</button></td></tr>`).join('')}</tbody></table></div>`; }
 };
 const staffView = {
   html(){ return `<div class="head"><h2>Сотрудники</h2><button class="btn primary" data-act="editStaff" data-id="">+ Сотрудник</button></div>
-    <div class="tablewrap"><table><thead><tr><th>Имя</th><th>Должность</th><th>Телефон</th><th class="right">% от заказа</th><th>Доступ в систему</th><th>Статус</th><th></th></tr></thead><tbody>
+    <div class="mcards">${S.data.staff.map(s=>`<div class="mcard"><div class="mrow"><b>${esc(s.name)}</b><button class="btn sm" data-act="editStaff" data-id="${s.id}">Изменить</button></div>
+      <div class="muted small">${esc(s.position||'')}${s.phone?' · '+esc(s.phone):''} · ${pay(s.id)}% от заказа</div>
+      <div class="row">${loginOf(s.id)?`<span class="pill p-ok">🔑 ${esc(loginOf(s.id).full_name)}</span>`:'<span class="pill p-warn">Нет входа</span>'}<span class="pill ${s.active?'p-ok':'p-warn'}">${s.active?'Работает':'Не работает'}</span></div></div>`).join('')}</div>
+    <div class="tablewrap dtonly"><table><thead><tr><th>Имя</th><th>Должность</th><th>Телефон</th><th class="right">% от заказа</th><th>Доступ в систему</th><th>Статус</th><th></th></tr></thead><tbody>
     ${S.data.staff.map(s=>`<tr><td><b>${esc(s.name)}</b></td><td>${esc(s.position||'')}</td><td>${esc(s.phone||'')}</td><td class="right num">${pay(s.id)}%</td>
     <td>${loginOf(s.id)?`<span class="pill p-ok">🔑 ${esc(loginOf(s.id).full_name)}</span>`:'<span class="pill p-warn">Нет входа</span>'}</td>
     <td><span class="pill ${s.active?'p-ok':'p-warn'}">${s.active?'Работает':'Не работает'}</span></td><td class="right"><button class="btn sm" data-act="editStaff" data-id="${s.id}">Изменить</button></td></tr>`).join('')}</tbody></table></div>`; }
@@ -196,7 +204,9 @@ const suppliesView = {
     ${S.data._suppliesMissing?`<div class="card" style="margin-bottom:14px;border-color:var(--warn)"><b>Раздел ещё не подключён к базе.</b><p class="muted small" style="margin-top:6px">Откройте в репозитории файл <code>supabase/supplies.sql</code>, вставьте его в Supabase → SQL Editor и нажмите Run. Затем обновите страницу.</p></div>`:''}
     <div class="grid g3 stagger" style="margin-bottom:14px"><div class="card kpi"><span class="lbl">Закуплено за этот месяц</span><b data-count="${month}">${money(month)}</b></div>
       <div class="card kpi"><span class="lbl">Закуплено всего</span><b data-count="${all}">${money(all)}</b></div><div class="card kpi"><span class="lbl">Позиций в журнале</span><b>${list.length}</b></div></div>
-    ${list.length?`<div class="tablewrap"><table><thead><tr><th>Дата</th><th>Что заказали</th><th class="right">Кол-во</th><th class="right">Цена за ед.</th><th class="right">Сумма</th><th>Примечание</th><th></th></tr></thead><tbody>
+    ${list.length?`<div class="mcards">${list.map(x=>`<div class="mcard"><div class="mrow"><b>${esc(x.name)}</b><button class="btn sm" data-act="editSupply" data-id="${x.id}">Изменить</button></div>
+      <div class="muted small">${new Date(x.bought_at+'T12:00').toLocaleDateString('ru-RU')} · ${money2(x.qty)} шт × ${money(x.unit_price)}</div><div class="mrow"><b class="num">${money(tot(x))}</b>${x.note?`<span class="muted small">${esc(x.note)}</span>`:''}</div></div>`).join('')}</div>
+    <div class="tablewrap dtonly"><table><thead><tr><th>Дата</th><th>Что заказали</th><th class="right">Кол-во</th><th class="right">Цена за ед.</th><th class="right">Сумма</th><th>Примечание</th><th></th></tr></thead><tbody>
     ${list.map(x=>`<tr><td class="num">${new Date(x.bought_at+'T12:00').toLocaleDateString('ru-RU')}</td><td><b>${esc(x.name)}</b></td><td class="right num">${money2(x.qty)}</td><td class="right num">${money(x.unit_price)}</td><td class="right num"><b>${money(tot(x))}</b></td><td class="muted">${esc(x.note||'')}</td><td class="right"><button class="btn sm" data-act="editSupply" data-id="${x.id}">Изменить</button></td></tr>`).join('')}
     </tbody></table></div>`:`<div class="card empty">Закупок пока нет. Нажмите «+ Закупка» и запишите, что заказали.</div>`}`;
   },
@@ -303,7 +313,8 @@ A.payDone = async f => {
   if(isAdmin()) S.data.orders.push(await db.insert('orders',o)); else await db.insert('orders',o,false);
   f.closest('.overlay').remove(); toast('Заказ выполнен ✓'); S.render();
 };
-A.clSearch = el => { cl.q=el.value; $('#clrows').innerHTML=clientRows(); const m=$('#clcards'); if(m) m.innerHTML=clientCards(); };
+A.clSearch = el => { cl.q=el.value; cl.limit=50; clearTimeout(cl.t); cl.t=setTimeout(clUpdate,150); };
+A.clMore = () => { cl.limit+=50; clUpdate(); };
 const clientForm = c => modal(`<h3>${c?'Клиент':'Новый клиент'}</h3><form data-form="saveClient" data-id="${c?.id||''}">
   <label class="field"><span>ФИО</span><input name="name" value="${esc(c?.name)}" required></label>
   <label class="field"><span>Телефон</span><input name="phone" type="tel" inputmode="tel" placeholder="+7 (900) 000-00-00" data-phone value="${esc(c?.phone?maskPhone(c.phone):'')}" required></label>
@@ -454,8 +465,8 @@ function waBody(){
   <label class="field"><span>Текст ({имя} заменится именем клиента)</span><textarea rows="4" data-input="waText">${esc(tpl)}</textarea></label>
   <label class="field"><span>Только тем, кто не был не менее (дней, 0 — всем)</span><input type="number" min="0" value="${wa.minDays}" data-change="waMin" style="max-width:140px"></label>
   <p class="muted small">Получатели: <b>${list.length}</b> (согласие есть у ${consent} из ${total}). Тем, кто уже записан на этот день, не пишем.</p>
-  <div id="warows" style="max-height:38vh;overflow:auto">${list.length?list.map(c=>`<div class="warow${wa.sent.has(c.id)?' sent':''}"><span><b>${esc(c.name)}</b> <span class="muted small">${esc(c.phone)}</span></span>
-    <a class="btn wa sm" href="https://wa.me/${digits(c.phone)}?text=${encodeURIComponent(tpl.replaceAll('{имя}',firstName(c.name)))}" target="_blank" rel="noopener" data-act="waSent" data-id="${c.id}">${icon('chat')}${wa.sent.has(c.id)?'Отправлено':'Написать'}</a></div>`).join(''):'<div class="empty">Нет клиентов с согласием на сообщения. Отметьте согласие в разделе «Клиенты».</div>'}</div>
+  <div id="warows" style="max-height:38vh;overflow:auto">${list.length?list.slice(0,150).map(c=>`<div class="warow${wa.sent.has(c.id)?' sent':''}"><span><b>${esc(c.name)}</b> <span class="muted small">${esc(c.phone)}</span></span>
+    <a class="btn wa sm" href="https://wa.me/${digits(c.phone)}?text=${encodeURIComponent(tpl.replaceAll('{имя}',firstName(c.name)))}" target="_blank" rel="noopener" data-act="waSent" data-id="${c.id}">${icon('chat')}${wa.sent.has(c.id)?'Отправлено':'Написать'}</a></div>`).join(''):'<div class="empty">Нет клиентов с согласием на сообщения. Отметьте согласие в разделе «Клиенты».</div>'}${list.length>150?`<p class="muted small">Показаны первые 150 из ${list.length}. Рассылайте партиями, отметившиеся уходят из списка после записи.</p>`:''}</div>
   <div class="actions"><button class="btn" data-act="closeModal">Закрыть</button></div>`;
 }
 function waRefresh(){ const m=$('#wabox'); if(m) m.innerHTML=waBody(); }

@@ -45,7 +45,7 @@ textarea{min-height:76px;resize:vertical}
 .btn[disabled]{opacity:.55;pointer-events:none}
 
 /* shell */
-.shell{display:grid;grid-template-columns:240px 1fr;min-height:100vh}
+.shell{display:grid;grid-template-columns:240px minmax(0,1fr);min-height:100vh}
 .side{background:var(--surface);border-right:1px solid var(--line);padding:18px 14px;position:sticky;top:0;height:100vh;display:flex;flex-direction:column;gap:4px}
 .side .logo{padding:4px 8px 18px}
 .nav{display:flex;flex-direction:column;gap:3px}
@@ -118,7 +118,7 @@ tbody tr{transition:background .15s}tbody tr:hover{background:var(--surface2)}
 /* mobile */
 .topbar{display:none}
 @media (max-width:900px){
-  .shell{grid-template-columns:1fr}
+  .shell{grid-template-columns:minmax(0,1fr)}
   .side{position:fixed;inset:auto 0 0 0;height:auto;flex-direction:row;padding:6px;border-right:0;border-top:1px solid var(--line);z-index:40}
   .side .logo,.me{display:none}
   .nav{flex-direction:row;width:100%;overflow-x:auto;gap:2px}
@@ -237,3 +237,26 @@ a.homelink:active{opacity:.7}
 .photos figcaption{display:flex;justify-content:space-between;align-items:center;gap:4px;padding:5px 8px;font-size:12px;color:var(--muted)}
 .photos .x{border:0;background:none;font-size:20px;line-height:1;color:var(--bad);cursor:pointer;min-width:28px;min-height:28px}
 .btn.disabled{opacity:.6;pointer-events:none}
+.clfoot{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:14px 0 30px}
+
+/* Мобильное меню «Ещё» */
+.morebtn{display:none!important}
+.sheet{display:flex;flex-direction:column;gap:8px;margin-top:14px}
+.sheet .btn{justify-content:flex-start;gap:12px;margin-top:0}
+.sheet .btn svg{width:20px;height:20px}
+@media (max-width:900px){
+  .nav{overflow:visible}
+  .nav button.sec{display:none}
+  .morebtn{display:flex!important}
+  .nav button{min-width:0}
+}
+
+/* не даём широким таблицам растягивать страницу на телефоне */
+.shell>div,.main,.view{min-width:0;max-width:100%}
+body{overflow-x:clip}
+@media (max-width:700px){ .mcard .pill{justify-self:start} .mcard .btn.sm{min-height:38px} }
+.grid>*,.f2>*{min-width:0}
+.chartbox{max-width:100%;overflow:hidden}
+.chartbox canvas{max-width:100%}
+.btn.sm{white-space:nowrap}
+.mrow{flex-wrap:wrap}.mrow>b:first-child{min-width:0;flex:1 1 140px}

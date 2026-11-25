@@ -1,6 +1,6 @@
 import { db, DEMO } from './db.js';
 import { views, NAV } from './views.js';
-import { S, $, toast, esc, icon, maskPhone } from './core.js';
+import { S, $, toast, esc, icon, maskPhone, modal } from './core.js';
 const brand = `<a class="brand homelink" href="./" data-act="home" aria-label="На главную"><b>Бумеранг</b><span>${icon('pin')}Атажукина 2Б</span></a>`;
 
 const root = document.getElementById('root');
@@ -27,22 +27,30 @@ function loginScreen(msg=''){
 async function boot(){
   const allowed = NAV.filter(n => n.roles.includes(S.user.role));
   S.tab = allowed[0].id;
+  const many = allowed.length > 5; S.secTabs = many ? allowed.slice(4).map(n=>n.id) : [];
   root.innerHTML = `<div class="shell"><aside class="side">${brand}<a class="logo homelink" href="./" data-act="home" aria-label="На главную"><i>${icon('drop')}</i>CarwasH</a>
-    <nav class="nav" id="nav">${allowed.map(n=>`<button data-tab="${n.id}">${icon(n.icon)}<span>${n.title}</span></button>`).join('')}</nav>
+    <nav class="nav" id="nav">${allowed.map((n,i)=>`<button data-tab="${n.id}"${many&&i>=4?' class="sec"':''}>${icon(n.icon)}<span>${n.title}</span></button>`).join('')}${many?'<button class="morebtn" data-more aria-label="Ещё"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg><span>Ещё</span></button>':''}</nav>
     <div class="me"><div><b>${esc(S.user.name)}</b><br><span class="role">${S.user.role==='admin'?'Администратор':'Сотрудник'}</span></div>
     <button class="btn sm" id="out">Выйти</button></div></aside>
     <div><div class="topbar">${brand}<button class="btn sm" id="out2">Выйти</button></div>
     <main class="main" id="main"><div class="grid g4"><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div></div></main></div></div>`;
   const out = async () => { await db.signOut(); S.user=null; loginScreen(); };
   $('#out').onclick = out; $('#out2').onclick = out;
-  $('#nav').onclick = e => { const b=e.target.closest('[data-tab]'); if(b){ S.tab=b.dataset.tab; render(); } };
+  $('#nav').onclick = e => {
+    if(e.target.closest('[data-more]')){
+      const m = modal(`<h3>Меню</h3><div class="sheet">${allowed.slice(4).map(n=>`<button class="btn block${S.tab===n.id?' primary':''}" data-sheet="${n.id}">${icon(n.icon)}${n.title}</button>`).join('')}<button class="btn block" data-sheet="__out">Выйти</button></div>`);
+      m.onclick = ev => { const x=ev.target.closest('[data-sheet]'); if(!x) return; m.remove(); if(x.dataset.sheet==='__out') out(); else { S.tab=x.dataset.sheet; render(); } };
+      return;
+    }
+    const b=e.target.closest('[data-tab]'); if(b){ S.tab=b.dataset.tab; render(); }
+  };
   try{ S.data = await db.loadAll(S.user.role); }catch(err){ toast('Ошибка загрузки: '+err.message,true); S.data = {clients:[],services:[],staff:[],bookings:[],orders:[],staff_pay:[]}; }
   render();
 }
 
 export function render(){
   const main = $('#main'); if(!main) return;
-  document.querySelectorAll('#nav button').forEach(b => b.classList.toggle('on', b.dataset.tab===S.tab));
+  document.querySelectorAll('#nav button').forEach(b => b.classList.toggle('on', b.dataset.more!==undefined ? (S.secTabs||[]).includes(S.tab) : b.dataset.tab===S.tab));
   main.innerHTML = `<div class="view">${views[S.tab].html()}</div>`;
   views[S.tab].after?.();
   window.scrollTo({top:0});
