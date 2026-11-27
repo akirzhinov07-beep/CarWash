@@ -52,9 +52,9 @@ async function ensureCar(client, model, plate){
   if(k){ const patch={}; if(k.model!==model) patch.model=model; if(plate && k.plate!==plate) patch.plate=plate; if(Object.keys(patch).length) Object.assign(k, await db.update('cars',k.id,patch)); }
   else S.data.cars.push(await db.insert('cars',{client_id:client.id, model, plate:plate||null}));
 }
-// зарплата сотрудника: фиксированная сумма в рублях по каждой услуге (если у услуги не задана — процент сотрудника от её цены)
+// зарплата сотрудника: фиксированная сумма в рублях по каждой услуге (процент сотрудников больше не используется)
 export const payOn = () => S.data.services.length>0 && 'pay' in S.data.services[0];
-const earnOf = (services, staffId) => (services||[]).reduce((t,x)=>{ const v = x.pay ?? bySvc(x.id)?.pay; return t + (v!=null ? +v : (+x.price||0)*pay(staffId)/100); },0);
+const earnOf = (services, staffId) => (services||[]).reduce((t,x)=>{ const v = x.pay ?? bySvc(x.id)?.pay; return t + (+v||0); },0);
 const listSum = svcs => (svcs||[]).reduce((t,x)=>t+(+x.price||0),0);
 const calc = (list, disc, gift) => { const d = gift ? 0 : Math.min(Math.max(0,+disc||0), list); return { disc:d, total: gift ? 0 : list-d }; };
 const priceTag = b => b.gift ? '<span class="pill p-warn">🎁 подарок</span>' : (+b.discount>0 ? `<span class="muted small">скидка −${money(b.discount)}</span>` : '');
@@ -197,7 +197,7 @@ const servicesView = {
   html(){ return `<div class="head"><h2>Услуги</h2><button class="btn primary" data-act="editService" data-id="">+ Услуга</button></div>
     ${payOn()?'':'<div class="card" style="margin-bottom:14px;border-color:var(--warn)"><b>Зарплата в рублях, скидки и подарки ещё не подключены.</b><p class="muted small" style="margin-top:6px">Выполните в Supabase → SQL Editor файл <code>supabase/pay_gift.sql</code> и обновите страницу.</p></div>'}
     <div class="mcards">${S.data.services.map(s=>`<div class="mcard"><div class="mrow"><b>${esc(s.name)}</b><button class="btn sm" data-act="editService" data-id="${s.id}">Изменить</button></div>
-      <div class="muted small">${esc(s.category)} · ${s.minutes} мин</div><div class="mrow"><b class="num">${money(s.price)}${payOn()?` <span class="muted small">· ЗП ${s.pay!=null?money(s.pay):'по %'}</span>`:''}</b><span class="pill ${s.active?'p-ok':'p-warn'}">${s.active?'Активна':'Скрыта'}</span></div></div>`).join('')}</div>
+      <div class="muted small">${esc(s.category)} · ${s.minutes} мин</div><div class="mrow"><b class="num">${money(s.price)}${payOn()?` <span class="muted small">· ЗП ${s.pay!=null?money(s.pay):'не задана'}</span>`:''}</b><span class="pill ${s.active?'p-ok':'p-warn'}">${s.active?'Активна':'Скрыта'}</span></div></div>`).join('')}</div>
     <div class="tablewrap dtonly"><table><thead><tr><th>Название</th><th>Категория</th><th class="right">Цена</th>${payOn()?'<th class="right">Зарплата</th>':''}<th>Время</th><th>Статус</th><th></th></tr></thead><tbody>
     ${S.data.services.map(s=>`<tr><td><b>${esc(s.name)}</b></td><td>${esc(s.category)}</td><td class="right num">${money(s.price)}</td>${payOn()?`<td class="right num">${s.pay!=null?money(s.pay):'<span class="muted">по %</span>'}</td>`:''}<td>${s.minutes} мин</td>
     <td><span class="pill ${s.active?'p-ok':'p-warn'}">${s.active?'Активна':'Скрыта'}</span></td><td class="right"><button class="btn sm" data-act="editService" data-id="${s.id}">Изменить</button></td></tr>`).join('')}</tbody></table></div>`; }
@@ -205,10 +205,10 @@ const servicesView = {
 const staffView = {
   html(){ return `<div class="head"><h2>Сотрудники</h2><button class="btn primary" data-act="editStaff" data-id="">+ Сотрудник</button></div>
     <div class="mcards">${S.data.staff.map(s=>`<div class="mcard"><div class="mrow"><b>${esc(s.name)}</b><button class="btn sm" data-act="editStaff" data-id="${s.id}">Изменить</button></div>
-      <div class="muted small">${esc(s.position||'')}${s.phone?' · '+esc(s.phone):''} · ${pay(s.id)}% от заказа</div>
+      <div class="muted small">${esc(s.position||'')}${s.phone?' · '+esc(s.phone):''}</div>
       <div class="row">${loginOf(s.id)?`<span class="pill p-ok">🔑 ${esc(loginOf(s.id).full_name)}</span>`:'<span class="pill p-warn">Нет входа</span>'}<span class="pill ${s.active?'p-ok':'p-warn'}">${s.active?'Работает':'Не работает'}</span></div></div>`).join('')}</div>
-    <div class="tablewrap dtonly"><table><thead><tr><th>Имя</th><th>Должность</th><th>Телефон</th><th class="right">% от заказа</th><th>Доступ в систему</th><th>Статус</th><th></th></tr></thead><tbody>
-    ${S.data.staff.map(s=>`<tr><td><b>${esc(s.name)}</b></td><td>${esc(s.position||'')}</td><td>${esc(s.phone||'')}</td><td class="right num">${pay(s.id)}%</td>
+    <div class="tablewrap dtonly"><table><thead><tr><th>Имя</th><th>Должность</th><th>Телефон</th><th>Доступ в систему</th><th>Статус</th><th></th></tr></thead><tbody>
+    ${S.data.staff.map(s=>`<tr><td><b>${esc(s.name)}</b></td><td>${esc(s.position||'')}</td><td>${esc(s.phone||'')}</td>
     <td>${loginOf(s.id)?`<span class="pill p-ok">🔑 ${esc(loginOf(s.id).full_name)}</span>`:'<span class="pill p-warn">Нет входа</span>'}</td>
     <td><span class="pill ${s.active?'p-ok':'p-warn'}">${s.active?'Работает':'Не работает'}</span></td><td class="right"><button class="btn sm" data-act="editStaff" data-id="${s.id}">Изменить</button></td></tr>`).join('')}</tbody></table></div>`; }
 };
@@ -424,8 +424,7 @@ A.editStaff = el => { const s=S.data.staff.find(x=>x.id===+el.dataset.id);
   modal(`<h3>${s?'Сотрудник':'Новый сотрудник'}</h3><form data-form="saveStaff" data-id="${s?.id||''}">
   <label class="field"><span>Имя</span><input name="name" value="${esc(s?.name)}" required></label>
   <div class="f2"><label class="field"><span>Должность</span><input name="position" value="${esc(s?.position)}"></label><label class="field"><span>Телефон</span><input name="phone" type="tel" inputmode="tel" placeholder="+7 (900) 000-00-00" data-phone value="${esc(s?.phone?maskPhone(s.phone):'')}"></label></div>
-  <div class="f2"><label class="field"><span>% от цены (если у услуги не задана сумма)</span><input name="percent" type="number" min="0" max="100" value="${s?pay(s.id):30}" required></label>
-  <label class="field"><span>Статус</span><select name="active"><option value="1"${s?.active!==false?' selected':''}>Работает</option><option value="0"${s?.active===false?' selected':''}>Не работает</option></select></label></div>
+  <div><label class="field"><span>Статус</span><select name="active"><option value="1"${s?.active!==false?' selected':''}>Работает</option><option value="0"${s?.active===false?' selected':''}>Не работает</option></select></label></div>
   <div class="actions">${s?`<button type="button" class="btn danger" data-act="delStaff" data-id="${s.id}">Удалить</button>`:''}<button type="button" class="btn" data-act="closeModal">Отмена</button><button class="btn primary">Сохранить</button></div></form>
   ${s?`<div class="accessbox"><div><b>Доступ в систему</b><div class="muted small">${loginOf(s.id)?`Логин: <b>${esc(loginOf(s.id).full_name)}</b>`:'У сотрудника пока нет логина и пароля'}</div></div>
   <button type="button" class="btn sm" data-act="openAccess" data-id="${s.id}">${loginOf(s.id)?'Управлять':'Выдать доступ'}</button></div>`:'<p class="muted small" style="margin-top:14px">Сначала сохраните сотрудника, потом откройте его снова и выдайте доступ.</p>'}`); };
@@ -473,10 +472,8 @@ A.delStaff = async el => {
   el.closest('.overlay').remove(); toast('Сотрудник удалён'); S.render();
 };
 A.saveStaff = async f => {
-  const row={name:f.name.value.trim(),position:f.position.value.trim(),phone:f.phone.value.trim(),active:f.active.value==='1'}, id=+f.dataset.id, percent=+f.percent.value;
+  const row={name:f.name.value.trim(),position:f.position.value.trim(),phone:f.phone.value.trim(),active:f.active.value==='1'}, id=+f.dataset.id;
   let r; if(id){ r=await db.update('staff',id,row); Object.assign(S.data.staff.find(x=>x.id===id),r); } else { r=await db.insert('staff',row); S.data.staff.push(r); }
-  await db.upsert('staff_pay',{staff_id:r.id,percent},'staff_id');
-  const p=S.data.staff_pay.find(x=>x.staff_id===r.id); p?p.percent=percent:S.data.staff_pay.push({staff_id:r.id,percent});
   f.closest('.overlay').remove(); toast('Сохранено ✓'); S.render();
 };
 export { analyticsView };

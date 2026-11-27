@@ -1,12 +1,12 @@
 import { S, $, esc, money, dt, dkey, countUp, freeWindows, icon, lib, toast } from './core.js';
 
 const PAYN = { cash:'Наличными', card:'Безналичная' };
-const pct = id => S.data.staff_pay.find(p=>p.staff_id===id)?.percent ?? 0;
 const sname = id => S.data.staff.find(s=>s.id===id)?.name || 'Не указан';
 const A = { range:'month', from:'', to:'', tab:'overview', sup:false };
 const charts = [];
 const cssv = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const day0 = d => { d=new Date(d); d.setHours(0,0,0,0); return d; };
+const pct = id => S.data.staff_pay.find(p=>p.staff_id===id)?.percent ?? 0; // только для старых заказов
 const salary = o => o.staff_earn!=null ? +o.staff_earn : o.total * pct(o.staff_id) / 100;
 const listOf = o => o.list_total!=null ? +o.list_total : (o.services||[]).reduce((t,s)=>t+(+s.price||0),0);
 
