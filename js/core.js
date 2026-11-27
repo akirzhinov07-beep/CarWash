@@ -38,7 +38,11 @@ export function maskPhone(v){
 }
 export const dkey = d => { d=new Date(d); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); };
 export const localInput = (d=new Date()) => { d=new Date(d); d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return d.toISOString().slice(0,16); };
+// Понятный текст вместо технических «TypeError: Failed to fetch»
+export const friendly = m => /failed to fetch|networkerror|load failed|network request failed|aborted|timeout|fetch/i.test(String(m||''))
+  ? 'Нет связи с базой (слабый интернет). Данные не потеряны — проверьте Wi-Fi и повторите.' : String(m||'Ошибка');
 export function toast(msg, bad){
+  if(bad) msg = friendly(msg);
   const t = document.createElement('div'); t.className='toast'+(bad?' bad':''); t.textContent=msg;
   document.getElementById('toasts').append(t); setTimeout(()=>{ t.style.transition='opacity .3s'; t.style.opacity=0; setTimeout(()=>t.remove(),300); }, bad?9000:3200);
 }

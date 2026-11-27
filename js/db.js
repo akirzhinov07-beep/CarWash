@@ -1,4 +1,5 @@
 import { SUPABASE_URL, SUPABASE_KEY, LOGIN_DOMAIN } from './config.js';
+import { friendly } from './core.js';
 
 // Единый слой данных: Supabase (боевой) или демо в localStorage (?demo=1, только для показа/тестов).
 export const DEMO = new URLSearchParams(location.search).has('demo');
@@ -7,10 +8,23 @@ let sb = null;
 const T = ['clients','services','staff','bookings','orders','staff_pay','supplies','profiles','settings','cars','client_photos'];
 const ADMIN_ONLY = ['orders','staff_pay','supplies','profiles'];
 
+// Слабый Wi-Fi: чтение и вход повторяются сами, у каждого запроса есть тайм-аут (запись не дублируем — чтобы не создать две записи)
+async function robustFetch(url, opts = {}){
+  const method = (opts.method||'GET').toUpperCase(), safe = method==='GET' || method==='HEAD' || String(url).includes('/auth/v1/');
+  let last;
+  for(let i=0; i<(safe?3:1); i++){
+    const ctl = new AbortController(), t = setTimeout(()=>ctl.abort(), safe?20000:30000);
+    if(opts.signal) opts.signal.addEventListener('abort', ()=>ctl.abort(), { once:true });
+    try{ const r = await fetch(url, { ...opts, signal:ctl.signal }); clearTimeout(t); if(r.status<500 || !safe || i===2) return r; last = new Error('HTTP '+r.status); }
+    catch(e){ clearTimeout(t); last = e; if(opts.signal?.aborted) throw e; }
+    await new Promise(ok=>setTimeout(ok, 500*(i+1)));
+  }
+  throw last;
+}
 async function supa(){
   if(sb) return sb;
   const { createClient } = await import('../vendor/supabase.js');
-  sb = createClient(SUPABASE_URL, SUPABASE_KEY, { auth:{ persistSession:true, autoRefreshToken:true } });
+  sb = createClient(SUPABASE_URL, SUPABASE_KEY, { auth:{ persistSession:true, autoRefreshToken:true }, global:{ fetch:robustFetch } });
   return sb;
 }
 
@@ -20,7 +34,7 @@ function demoLoad(){
   try{ const d = JSON.parse(localStorage.getItem(LS)); if(d) return d; }catch{}
   const now = Date.now(), day = 864e5, d = { seq:100, user:null,
     services:[[1,'Мойка кузова','Мойка',800,30],[2,'Комплексная мойка','Мойка',1500,60],[3,'Химчистка салона','Химчистка',6000,180],[4,'Полировка кузова','Полировка',5000,150],[5,'Керамика','Защита',12000,240],[6,'Чернение резины','Прочее',300,10]]
-      .map(([id,name,category,price,minutes])=>({id,name,category,price,minutes,active:true})),
+      .map(([id,name,category,price,minutes])=>({id,name,category,price,minutes,active:true,pay:Math.round(price*.35/50)*50})),
     staff:[{id:1,name:'Иван Петров',position:'Мойщик',phone:'+7 900 111-11-11',active:true},{id:2,name:'Сергей Ким',position:'Детейлер',phone:'+7 900 222-22-22',active:true}],
     staff_pay:[{staff_id:1,percent:30},{staff_id:2,percent:35}],
     clients:[{id:1,name:'Алексей Смирнов',phone:'+7 901 555-01-01',car:'Toyota Camry',note:'',marketing_ok:true,created_at:new Date(now-9*day).toISOString()},{id:2,name:'Мария Орлова',phone:'+7 902 555-02-02',car:'BMW X5',note:'Любит без воска',marketing_ok:true,created_at:new Date(now-3*day).toISOString()}],
@@ -90,7 +104,7 @@ export const db = {
   async list(table){
     if(DEMO) return [...demo[table]];
     const c = await supa(); const { data, error } = await c.from(table).select('*');
-    if(error) throw new Error(error.message); return data;
+    if(error) throw new Error(friendly(error.message)); return data;
   },
   async rpc(name, args){
     if(DEMO){
@@ -104,46 +118,46 @@ export const db = {
       demoSave(); return;
     }
     const c = await supa(); const { error } = await c.rpc(name, args);
-    if(error) throw new Error(error.message);
+    if(error) throw new Error(friendly(error.message));
   },
   async listWhere(table, col, val){
     if(DEMO) return demo[table].filter(x=>x[col]===val);
     const c = await supa(); const { data, error } = await c.from(table).select('*').eq(col,val).order('id',{ascending:true});
-    if(error) throw new Error(error.message); return data;
+    if(error) throw new Error(friendly(error.message)); return data;
   },
   async insert(table, row, returning=true){
     if(DEMO){ const r={...(table==='bookings'?{status:'pending',pay_type:null}:{}),...row,id:++demo.seq,created_at:row.created_at||new Date().toISOString()}; demo[table].push(r); demoSave(); return r; }
     const c = await supa();
     const q = c.from(table).insert(row);
-    if(!returning){ const { error } = await q; if(error) throw new Error(error.message); return null; }
+    if(!returning){ const { error } = await q; if(error) throw new Error(friendly(error.message)); return null; }
     const { data, error } = await q.select().single();
-    if(error) throw new Error(error.message);
+    if(error) throw new Error(friendly(error.message));
     return data;
   },
   async insertMany(table, rows){
     if(!rows.length) return [];
     if(DEMO){ const out=rows.map(row=>({...row,id:++demo.seq,created_at:new Date().toISOString()})); demo[table].push(...out); demoSave(); return out; }
     const c = await supa(); const { data, error } = await c.from(table).insert(rows).select();
-    if(error) throw new Error(error.message); return data;
+    if(error) throw new Error(friendly(error.message)); return data;
   },
   async update(table, id, patch, key='id'){
     if(DEMO){ const r=demo[table].find(x=>x[key]===id); Object.assign(r,patch); demoSave(); return r; }
     const c = await supa();
     const { data, error } = await c.from(table).update(patch).eq(key,id).select().single();
-    if(error) throw new Error(error.message);
+    if(error) throw new Error(friendly(error.message));
     return data;
   },
   async upsert(table, row, key){
     if(DEMO){ const i=demo[table].findIndex(x=>x[key]===row[key]); i<0?demo[table].push(row):Object.assign(demo[table][i],row); demoSave(); return row; }
     const c = await supa();
     const { error } = await c.from(table).upsert(row,{onConflict:key});
-    if(error) throw new Error(error.message);
+    if(error) throw new Error(friendly(error.message));
     return row;
   },
   async updateWhere(table, col, val, patch){
     if(DEMO){ demo[table].filter(x=>x[col]===val).forEach(x=>Object.assign(x,patch)); demoSave(); return; }
     const c = await supa(); const { error } = await c.from(table).update(patch).eq(col, val);
-    if(error) throw new Error(error.message);
+    if(error) throw new Error(friendly(error.message));
   },
   // Фото: в боевом режиме — закрытое хранилище Supabase, в демо — data-URL
   async uploadPhoto(clientId, blob){
@@ -157,19 +171,19 @@ export const db = {
     const out = {}; if(!paths.length) return out;
     if(DEMO){ paths.forEach(p=>out[p]=p); return out; }
     const c = await supa(); const { data, error } = await c.storage.from('client-photos').createSignedUrls(paths, 3600);
-    if(error) throw new Error(error.message);
+    if(error) throw new Error(friendly(error.message));
     (data||[]).forEach(d=>{ if(d.signedUrl) out[d.path]=d.signedUrl; }); return out;
   },
   async removeFiles(paths){
     if(DEMO || !paths.length) return;
     const c = await supa(); const { error } = await c.storage.from('client-photos').remove(paths);
-    if(error) throw new Error(error.message);
+    if(error) throw new Error(friendly(error.message));
   },
   async remove(table, id){
     if(DEMO){ demo[table]=demo[table].filter(x=>x.id!==id); demoSave(); return; }
     const c = await supa();
     const { error } = await c.from(table).delete().eq('id',id);
-    if(error) throw new Error(error.message);
+    if(error) throw new Error(friendly(error.message));
   }
 };
 const fill = o => { T.forEach(t => o[t] = o[t] || []); return o; };
@@ -194,7 +208,7 @@ async function loadCore(){
       if(n==='supplies'){ out.supplies = []; out._flags._suppliesMissing = true; return; }
       if(n==='settings'){ out.settings = []; out._flags._settingsMissing = true; return; }
       if(ADMIN_ONLY.includes(n)){ out[n] = []; return; }
-      throw new Error(r.error.message);
+      throw new Error(friendly(r.error.message));
     }
     out[n] = r.data;
   }));

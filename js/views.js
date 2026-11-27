@@ -52,6 +52,12 @@ async function ensureCar(client, model, plate){
   if(k){ const patch={}; if(k.model!==model) patch.model=model; if(plate && k.plate!==plate) patch.plate=plate; if(Object.keys(patch).length) Object.assign(k, await db.update('cars',k.id,patch)); }
   else S.data.cars.push(await db.insert('cars',{client_id:client.id, model, plate:plate||null}));
 }
+// зарплата сотрудника: фиксированная сумма в рублях по каждой услуге (если у услуги не задана — процент сотрудника от её цены)
+export const payOn = () => S.data.services.length>0 && 'pay' in S.data.services[0];
+const earnOf = (services, staffId) => (services||[]).reduce((t,x)=>{ const v = x.pay ?? bySvc(x.id)?.pay; return t + (v!=null ? +v : (+x.price||0)*pay(staffId)/100); },0);
+const listSum = svcs => (svcs||[]).reduce((t,x)=>t+(+x.price||0),0);
+const calc = (list, disc, gift) => { const d = gift ? 0 : Math.min(Math.max(0,+disc||0), list); return { disc:d, total: gift ? 0 : list-d }; };
+const priceTag = b => b.gift ? '<span class="pill p-warn">🎁 подарок</span>' : (+b.discount>0 ? `<span class="muted small">скидка −${money(b.discount)}</span>` : '');
 const STATUS = { pending:['Ожидает','p-warn'], done:['Выполнено','p-ok'], cancelled:['Отказался','p-bad'] };
 const PAY = { cash:'Наличными', card:'Безналичная оплата' };
 export const payName = p => PAY[p] || '—';
@@ -59,7 +65,7 @@ const bySvc = id => S.data.services.find(s=>s.id===id);
 const staffName = id => S.data.staff.find(s=>s.id===id)?.name || '—';
 
 /* ================= ЗАПИСЬ ================= */
-const rec = { carId:null, client:null, svcs:new Set(), q:'', date:null, time:null };
+const rec = { carId:null, client:null, svcs:new Set(), q:'', date:null, time:null, disc:0, gift:false };
 const pad2 = n => String(n).padStart(2,'0');
 const toMin = t => +t.slice(0,2)*60 + +t.slice(3,5);
 const fromMin = m => pad2(Math.floor(m/60))+':'+pad2(m%60);
@@ -118,14 +124,17 @@ const recView = {
       <div class="card stagger"><h3>2. Услуги</h3>
         ${cats.map(c=>`<div class="cat">${esc(c)}</div><div class="chips">${S.data.services.filter(s=>s.active&&s.category===c).map(s=>
           `<button type="button" class="chip${rec.svcs.has(s.id)?' on':''}" data-act="togSvc" data-id="${s.id}">${esc(s.name)}<small>${money(s.price)} · ${s.minutes} мин</small></button>`).join('')}</div>`).join('') || '<div class="empty">Услуг пока нет</div>'}
-        <div class="total"><span class="muted">Итого</span><b id="tot" class="num">0 ₽</b></div>
+        ${payOn()?`<div class="f2" style="margin-top:14px"><label class="field"><span>Скидка, ₽</span><input type="number" min="0" inputmode="numeric" id="recdisc" data-input="recDisc" placeholder="0" value="${rec.disc||''}"${rec.gift?' disabled':''}></label>
+          <label class="check" style="align-self:end;margin-bottom:12px"><input type="checkbox" id="recgift" data-change="recGift"${rec.gift?' checked':''}><span>🎁 Мойка в подарок</span></label></div>`:''}
+        <div class="total"><span class="muted">Итого</span><b id="tot" class="num">0 ₽</b></div><div id="totnote" class="muted small" style="text-align:right"></div>
         <button class="btn primary block" style="margin-top:0" type="submit">Записать клиента</button>
       </div>
     </form>`;
   },
   after(){ recView.sync(); }, 
   sync(){
-    const t = [...rec.svcs].reduce((s,id)=>s+(bySvc(id)?.price||0),0); const el=$('#tot'); if(el) el.textContent=money(t);
+    const list = [...rec.svcs].reduce((s,id)=>s+(bySvc(id)?.price||0),0), c = calc(list, rec.disc, rec.gift); const el=$('#tot'); if(el) el.textContent=money(c.total);
+    const nt=$('#totnote'); if(nt) nt.textContent = rec.gift ? `Подарок: по прайсу ${money(list)}, в кассу 0 ₽` : (c.disc ? `Скидка −${money(c.disc)} (по прайсу ${money(list)})` : '');
     const p=$('#picked'); if(!p) return;
     p.innerHTML = rec.client ? `<div class="picked" style="margin-bottom:12px"><span>✓ ${esc(rec.client.name)} · ${esc(carShort(rec.client))}</span><button type="button" class="btn sm" data-act="unpick">Сменить</button></div>` : '';
     const cp=$('#carpick'), ks = rec.client && carsOn() ? carsOf(rec.client.id) : [];
@@ -147,12 +156,12 @@ const bookingsView = {
     ${list.length? `<div class="mcards">${list.map(b=>`<div class="mcard"><div class="mrow"><b class="num">${new Date(b.starts_at).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})}</b>${statusCtl(b)}</div>
       <div><b>${esc(b.client_name)}</b> · <a href="tel:${esc(b.phone)}">${esc(b.phone)}</a>${waLink(b.phone)}</div><div>${carLine(b)}</div>
       <div class="muted small">${(b.services||[]).map(s=>esc(s.name)).join(', ')}${b.comment?` · 💬 ${esc(b.comment)}`:''}</div>
-      <div class="mrow"><span class="muted small">${staffName(b.staff_id)}</span><b class="num">${money(b.total)}</b></div></div>`).join('')}</div>
+      <div class="mrow"><span class="muted small">${staffName(b.staff_id)}</span><span style="text-align:right"><b class="num">${money(b.total)}</b><br>${priceTag(b)}</span></div></div>`).join('')}</div>
     <div class="tablewrap dtonly"><table><thead><tr><th>Время</th><th>Клиент</th><th>Авто</th><th>Услуги</th><th>Сотрудник</th><th class="right">Сумма</th><th>Статус</th></tr></thead><tbody>
     ${list.map(b=>`<tr><td class="num">${new Date(b.starts_at).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})}</td>
       <td><b>${esc(b.client_name)}</b><br><span class="muted small">${esc(b.phone)}</span>${waLink(b.phone)}${b.comment?`<br><span class="muted small">💬 ${esc(b.comment)}</span>`:''}</td>
       <td>${carLine(b)}</td><td>${(b.services||[]).map(s=>esc(s.name)).join(', ')}</td><td>${staffName(b.staff_id)}</td>
-      <td class="right num">${money(b.total)}</td>
+      <td class="right num">${money(b.total)}<br>${priceTag(b)}</td>
       <td>${statusCtl(b)}</td></tr>`).join('')}
     </tbody></table></div>` : `<div class="card empty">На этот день записей нет</div>`}`;
   }
@@ -186,10 +195,11 @@ const clientsView = {
 /* ================= УСЛУГИ / СОТРУДНИКИ ================= */
 const servicesView = {
   html(){ return `<div class="head"><h2>Услуги</h2><button class="btn primary" data-act="editService" data-id="">+ Услуга</button></div>
+    ${payOn()?'':'<div class="card" style="margin-bottom:14px;border-color:var(--warn)"><b>Зарплата в рублях, скидки и подарки ещё не подключены.</b><p class="muted small" style="margin-top:6px">Выполните в Supabase → SQL Editor файл <code>supabase/pay_gift.sql</code> и обновите страницу.</p></div>'}
     <div class="mcards">${S.data.services.map(s=>`<div class="mcard"><div class="mrow"><b>${esc(s.name)}</b><button class="btn sm" data-act="editService" data-id="${s.id}">Изменить</button></div>
-      <div class="muted small">${esc(s.category)} · ${s.minutes} мин</div><div class="mrow"><b class="num">${money(s.price)}</b><span class="pill ${s.active?'p-ok':'p-warn'}">${s.active?'Активна':'Скрыта'}</span></div></div>`).join('')}</div>
-    <div class="tablewrap dtonly"><table><thead><tr><th>Название</th><th>Категория</th><th class="right">Цена</th><th>Время</th><th>Статус</th><th></th></tr></thead><tbody>
-    ${S.data.services.map(s=>`<tr><td><b>${esc(s.name)}</b></td><td>${esc(s.category)}</td><td class="right num">${money(s.price)}</td><td>${s.minutes} мин</td>
+      <div class="muted small">${esc(s.category)} · ${s.minutes} мин</div><div class="mrow"><b class="num">${money(s.price)}${payOn()?` <span class="muted small">· ЗП ${s.pay!=null?money(s.pay):'по %'}</span>`:''}</b><span class="pill ${s.active?'p-ok':'p-warn'}">${s.active?'Активна':'Скрыта'}</span></div></div>`).join('')}</div>
+    <div class="tablewrap dtonly"><table><thead><tr><th>Название</th><th>Категория</th><th class="right">Цена</th>${payOn()?'<th class="right">Зарплата</th>':''}<th>Время</th><th>Статус</th><th></th></tr></thead><tbody>
+    ${S.data.services.map(s=>`<tr><td><b>${esc(s.name)}</b></td><td>${esc(s.category)}</td><td class="right num">${money(s.price)}</td>${payOn()?`<td class="right num">${s.pay!=null?money(s.pay):'<span class="muted">по %</span>'}</td>`:''}<td>${s.minutes} мин</td>
     <td><span class="pill ${s.active?'p-ok':'p-warn'}">${s.active?'Активна':'Скрыта'}</span></td><td class="right"><button class="btn sm" data-act="editService" data-id="${s.id}">Изменить</button></td></tr>`).join('')}</tbody></table></div>`; }
 };
 const staffView = {
@@ -264,6 +274,8 @@ A.recSlot = el => { rec.time=el.dataset.t; const c=$('#rectcustom'); if(c) c.val
 A.recNow = () => { const n=new Date(); rec.date=dkey(n); rec.time=pad2(n.getHours())+':'+pad2(n.getMinutes()); refreshWhen(); };
 A.recTime = el => { if(el.value){ rec.time=el.value; refreshWhen(); } };
 A.togSvc = el => { const id=+el.dataset.id; rec.svcs.has(id)?rec.svcs.delete(id):rec.svcs.add(id); el.classList.toggle('on'); recView.sync(); };
+A.recDisc = el => { rec.disc = Math.max(0, +el.value||0); recView.sync(); };
+A.recGift = el => { rec.gift = el.checked; const d=$('#recdisc'); if(d){ d.disabled=rec.gift; } recView.sync(); };
 A.unpick = () => { rec.client=null; rec.carId=null; recView.sync(); };
 A.recSearch = el => {
   if(S.data._clientsLoading){ $('#sugg').innerHTML='<p class="muted small" style="margin-top:6px">Загружаем клиентов…</p>'; return; }
@@ -297,12 +309,13 @@ A.saveBooking = async f => {
   if(!allowPast() && new Date(`${rec.date}T${rec.time}`) < new Date(Date.now()-stepM()*6e4)) throw new Error('Это время уже прошло. Запись задним числом отключена в «Настройки».');
   let client = rec.client || S.data.clients.find(c=>digits(c.phone)===digits(phone));
   if(!client){ client = await db.insert('clients',{name,phone,car,...(hasMk()?{marketing_ok:!!f.mk?.checked}:{})}); S.data.clients.push(client); }
-  else if(client.car!==car && car){ await db.update('clients',client.id,{car}); client.car=car; }
-  await ensureCar(client, car, plate);
-  const svcs=[...rec.svcs].map(id=>{const s=bySvc(id);return {id:s.id,name:s.name,category:s.category,price:s.price};});
+  else if(!carsOn() && client.car!==car && car){ await db.update('clients',client.id,{car}); client.car=car; }
+  const svcs=[...rec.svcs].map(id=>{const s=bySvc(id);return {id:s.id,name:s.name,category:s.category,price:s.price,...(payOn()&&s.pay!=null?{pay:s.pay}:{})};});
+  const cc = calc(listSum(svcs), rec.disc, rec.gift); if(payOn() && !rec.gift && (+rec.disc||0) > listSum(svcs)) throw new Error('Скидка больше суммы услуг');
+  const carJob = ensureCar(client, car, plate).catch(()=>{});
   const b = await db.insert('bookings',{ client_id:client.id, client_name:name||client.name, phone, car, ...(carsOn()?{plate:plate||null}:{}), comment:f.comment.value.trim()||null,
-    services:svcs, total:svcs.reduce((s,x)=>s+x.price,0), staff_id:f.staff.value?+f.staff.value:null, starts_at:new Date(`${rec.date}T${rec.time}`).toISOString() });
-  S.data.bookings.push(b); rec.client=null; rec.carId=null; rec.svcs=new Set(); rec.date=null; rec.time=null; bk.day=dkey(b.starts_at);
+    services:svcs, total:cc.total, ...(payOn()?{discount:cc.disc, gift:rec.gift}:{}), staff_id:f.staff.value?+f.staff.value:null, starts_at:new Date(`${rec.date}T${rec.time}`).toISOString() });
+  await carJob; S.data.bookings.push(b); rec.client=null; rec.carId=null; rec.svcs=new Set(); rec.date=null; rec.time=null; rec.disc=0; rec.gift=false; bk.day=dkey(b.starts_at);
   toast('Клиент записан ✓'); S.tab='bookings'; S.render();
 };
 A.setDay = el => { bk.day=el.value||dkey(new Date()); S.render(); };
@@ -312,18 +325,31 @@ A.setStatus = async el => {
   const b = S.data.bookings.find(x=>x.id===+el.dataset.id), v = el.value;
   if(v==='pending') return;
   if(v==='cancelled'){ b.status='cancelled'; await db.update('bookings',b.id,{status:'cancelled'}); toast('Запись отменена'); return S.render(); }
-  const m = modal(`<h3>Оплата</h3><p class="muted">${esc(b.client_name)} · ${esc(b.car)} · <b>${money(b.total)}</b></p>
-    <form data-form="payDone" data-id="${b.id}"><div class="field"><span>Тип оплаты</span><div class="paychoice"><label class="opt"><input type="radio" name="pay" value="cash" checked><b>💵 Наличными</b></label><label class="opt"><input type="radio" name="pay" value="card"><b>💳 Безналичная оплата</b></label></div></div>
+  const lst = listSum(b.services);
+  const m = modal(`<h3>Оплата</h3><p class="muted">${esc(b.client_name)} · ${esc(b.car)} · по прайсу <b>${money(lst)}</b></p>
+    <form data-form="payDone" data-id="${b.id}">
+    ${payOn()?`<div class="f2"><label class="field"><span>Скидка, ₽</span><input name="disc" type="number" min="0" inputmode="numeric" placeholder="0" value="${b.discount||''}" data-input="payCalc"${b.gift?' disabled':''}></label>
+      <label class="check" style="align-self:end;margin-bottom:12px"><input type="checkbox" name="gift" data-change="payCalc"${b.gift?' checked':''}><span>🎁 Мойка в подарок</span></label></div>
+      <div class="total"><span class="muted">К оплате</span><b id="paytot" class="num">${money(b.total)}</b></div>`:''}<div class="field"><span>Тип оплаты</span><div class="paychoice"><label class="opt"><input type="radio" name="pay" value="cash" checked><b>💵 Наличными</b></label><label class="opt"><input type="radio" name="pay" value="card"><b>💳 Безналичная оплата</b></label></div></div>
     <label class="field"><span>Кто выполнил</span><select name="staff" required><option value="">— выберите —</option>${S.data.staff.filter(s=>s.active).map(s=>`<option value="${s.id}"${s.id===b.staff_id?' selected':''}>${esc(s.name)}</option>`).join('')}</select></label>
     <div class="actions"><button type="button" class="btn" data-act="closeModal">Отмена</button><button class="btn primary">Подтвердить</button></div></form>`);
   m.addEventListener('mousedown', e=>{ if(e.target===m) S.render(); });
 };
 A.closeModal = el => { el.closest('.overlay').remove(); S.render(); };
+A.payCalc = el => {
+  const f = el.closest('form'), b = S.data.bookings.find(x=>x.id===+f.dataset.id), gift = f.gift.checked; f.disc.disabled = gift;
+  $('#paytot').textContent = money(calc(listSum(b.services), f.disc.value, gift).total);
+};
 A.payDone = async f => {
   const b = S.data.bookings.find(x=>x.id===+f.dataset.id), pay_type=f.querySelector('[name=pay]:checked').value, staff_id=+f.staff.value;
-  await db.update('bookings',b.id,{status:'done',pay_type,staff_id});
-  Object.assign(b,{status:'done',pay_type,staff_id});
-  const o = { booking_id:b.id, client_name:b.client_name, phone:b.phone, car:b.car, services:b.services, total:b.total, staff_id, pay_type };
+  const lst = listSum(b.services), gift = payOn() ? f.gift.checked : false, rawDisc = payOn() ? (+f.disc.value||0) : 0;
+  if(!gift && rawDisc > lst) throw new Error('Скидка больше суммы услуг');
+  const cc = payOn() ? calc(lst, rawDisc, gift) : { disc:0, total:b.total };
+  const extra = payOn() ? { discount:cc.disc, gift, total:cc.total } : {};
+  await db.update('bookings',b.id,{status:'done',pay_type,staff_id,...extra});
+  Object.assign(b,{status:'done',pay_type,staff_id,...extra});
+  const o = { booking_id:b.id, client_name:b.client_name, phone:b.phone, car:b.car, services:b.services, total:b.total, staff_id, pay_type,
+    ...(payOn()?{ discount:cc.disc, gift, list_total:lst, staff_earn:earnOf(b.services, staff_id) }:{}) };
   if(isAdmin()) S.data.orders.push(await db.insert('orders',o)); else await db.insert('orders',o,false);
   f.closest('.overlay').remove(); toast('Заказ выполнен ✓'); S.render();
 };
@@ -360,6 +386,7 @@ A.editService = el => { const s=S.data.services.find(x=>x.id===+el.dataset.id);
   <label class="field"><span>Название</span><input name="name" value="${esc(s?.name)}" required></label>
   <div class="f2"><label class="field"><span>Категория</span><select name="category" required>${[...new Set([...CATS,...S.data.services.map(x=>x.category)])].map(c=>`<option${c===(s?.category||'Мойка')?' selected':''}>${esc(c)}</option>`).join('')}</select></label>
   <label class="field"><span>Цена, ₽</span><input name="price" type="number" min="0" value="${s?.price??''}" required></label></div>
+  ${payOn()?`<label class="field"><span>Зарплата сотруднику за эту услугу, ₽</span><input name="pay" type="number" min="0" inputmode="numeric" placeholder="например 450" value="${s?.pay??''}"></label><p class="muted small" style="margin:-6px 0 10px">Если оставить пустым, зарплата считается по проценту сотрудника.</p>`:''}
   <div class="f2"><label class="field"><span>Минут</span><input name="minutes" type="number" min="5" value="${s?.minutes??30}" required></label>
   <label class="field"><span>Статус</span><select name="active"><option value="1"${s?.active!==false?' selected':''}>Активна</option><option value="0"${s?.active===false?' selected':''}>Скрыта</option></select></label></div>
   <div class="actions">${s?`<button type="button" class="btn danger" data-act="delService" data-id="${s.id}">Удалить</button>`:''}<button type="button" class="btn" data-act="closeModal">Отмена</button><button class="btn primary">Сохранить</button></div></form>`); };
@@ -389,7 +416,7 @@ A.saveSupply = async f => {
 };
 A.delSupply = async el => { if(!confirm('Удалить эту закупку из журнала?')) return; const id=+el.dataset.id; await db.remove('supplies',id); S.data.supplies=S.data.supplies.filter(v=>v.id!==id); el.closest('.overlay').remove(); toast('Удалено'); S.render(); };
 A.saveService = async f => {
-  const row={name:f.name.value.trim(),category:f.category.value.trim(),price:+f.price.value,minutes:+f.minutes.value,active:f.active.value==='1'}, id=+f.dataset.id;
+  const row={name:f.name.value.trim(),category:f.category.value.trim(),price:+f.price.value,minutes:+f.minutes.value,active:f.active.value==='1',...(payOn()?{pay:f.pay.value===''?null:+f.pay.value}:{})}, id=+f.dataset.id;
   if(id){ const r=await db.update('services',id,row); Object.assign(S.data.services.find(x=>x.id===id),r); } else S.data.services.push(await db.insert('services',row));
   f.closest('.overlay').remove(); toast('Сохранено ✓'); S.render();
 };
@@ -397,7 +424,7 @@ A.editStaff = el => { const s=S.data.staff.find(x=>x.id===+el.dataset.id);
   modal(`<h3>${s?'Сотрудник':'Новый сотрудник'}</h3><form data-form="saveStaff" data-id="${s?.id||''}">
   <label class="field"><span>Имя</span><input name="name" value="${esc(s?.name)}" required></label>
   <div class="f2"><label class="field"><span>Должность</span><input name="position" value="${esc(s?.position)}"></label><label class="field"><span>Телефон</span><input name="phone" type="tel" inputmode="tel" placeholder="+7 (900) 000-00-00" data-phone value="${esc(s?.phone?maskPhone(s.phone):'')}"></label></div>
-  <div class="f2"><label class="field"><span>% от заказа</span><input name="percent" type="number" min="0" max="100" value="${s?pay(s.id):30}" required></label>
+  <div class="f2"><label class="field"><span>% от цены (если у услуги не задана сумма)</span><input name="percent" type="number" min="0" max="100" value="${s?pay(s.id):30}" required></label>
   <label class="field"><span>Статус</span><select name="active"><option value="1"${s?.active!==false?' selected':''}>Работает</option><option value="0"${s?.active===false?' selected':''}>Не работает</option></select></label></div>
   <div class="actions">${s?`<button type="button" class="btn danger" data-act="delStaff" data-id="${s.id}">Удалить</button>`:''}<button type="button" class="btn" data-act="closeModal">Отмена</button><button class="btn primary">Сохранить</button></div></form>
   ${s?`<div class="accessbox"><div><b>Доступ в систему</b><div class="muted small">${loginOf(s.id)?`Логин: <b>${esc(loginOf(s.id).full_name)}</b>`:'У сотрудника пока нет логина и пароля'}</div></div>

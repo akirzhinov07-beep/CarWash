@@ -7,7 +7,8 @@ const A = { range:'month', from:'', to:'', tab:'overview', sup:false };
 const charts = [];
 const cssv = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const day0 = d => { d=new Date(d); d.setHours(0,0,0,0); return d; };
-const salary = o => o.total * pct(o.staff_id) / 100;
+const salary = o => o.staff_earn!=null ? +o.staff_earn : o.total * pct(o.staff_id) / 100;
+const listOf = o => o.list_total!=null ? +o.list_total : (o.services||[]).reduce((t,s)=>t+(+s.price||0),0);
 
 function period(){
   const now = new Date(), end = new Date(day0(now).getTime()+864e5-1);
@@ -18,9 +19,10 @@ function period(){
   return [new Date(now.getFullYear(),now.getMonth(),1), end];
 }
 const inRange = ([a,b]) => S.data.orders.filter(o => { const t=new Date(o.created_at); return t>=a && t<=b; });
-function sum(arr){ const rev=arr.reduce((s,o)=>s+o.total,0), sal=arr.reduce((s,o)=>s+salary(o),0); return { rev, sal, profit:rev-sal, n:arr.length, avg:arr.length?rev/arr.length:0 }; }
+function sum(arr){ const rev=arr.reduce((s,o)=>s+o.total,0), sal=arr.reduce((s,o)=>s+salary(o),0), gifts=arr.filter(o=>o.gift), disc=arr.reduce((s,o)=>s+(+o.discount||0),0);
+  return { rev, sal, profit:rev-sal, n:arr.length, avg:arr.length?rev/arr.length:0, giftN:gifts.length, giftVal:gifts.reduce((s,o)=>s+listOf(o),0), disc, discN:arr.filter(o=>+o.discount>0).length }; }
 function groupBy(arr, keyFn){ const m=new Map(); arr.forEach(o=>{ const k=keyFn(o); (m.get(k)||m.set(k,[]).get(k)).push(o); }); return m; }
-function perService(arr){ const m=new Map(); arr.forEach(o=>(o.services||[]).forEach(s=>{ const r=m.get(s.name)||{name:s.name,category:s.category||'',n:0,rev:0}; r.n++; r.rev+=s.price; m.set(s.name,r); })); return [...m.values()].sort((a,b)=>b.rev-a.rev); }
+function perService(arr){ const m=new Map(); arr.forEach(o=>(o.services||[]).forEach(s=>{ const r=m.get(s.name)||{name:s.name,category:s.category||'',n:0,rev:0}; const l=listOf(o); r.n++; r.rev+=s.price*(l>0?o.total/l:1); m.set(s.name,r); })); return [...m.values()].sort((a,b)=>b.rev-a.rev); }
 function perStaff(arr){ const m=groupBy(arr,o=>o.staff_id||0); return [...m].map(([id,l])=>{ const t=sum(l); return {name:sname(id),n:t.n,rev:t.rev,sal:t.sal,avg:t.avg}; }).sort((a,b)=>b.rev-a.rev); }
 function perClient(arr){ const m=groupBy(arr,o=>(o.phone||'')+'|'+o.client_name); return [...m].map(([,l])=>({name:l[0].client_name,phone:l[0].phone,car:l[0].car,n:l.length,rev:l.reduce((s,o)=>s+o.total,0)})).sort((a,b)=>b.rev-a.rev); }
 function perDay(arr,[a,b]){ const days=[]; for(let d=new Date(a); d<=b; d.setDate(d.getDate()+1)) days.push(dkey(d));
@@ -73,11 +75,12 @@ function body(){
   const newCli=S.data.clients.filter(c=>{const d=new Date(c.created_at);return d>=p[0]&&d<=p[1];}).length;
   const cash=arr.filter(o=>o.pay_type==='cash').reduce((s,o)=>s+o.total,0);
   const supSum=A.sup?suppliesIn(p).reduce((s,x)=>s+x.qty*x.unit_price,0):0;
-  if(A.tab==='orders') return `<div class="tablewrap"><table><thead><tr><th>Время</th><th>Авто</th><th>Услуги</th><th>Телефон</th><th>Выполнил</th><th>Оплата</th><th class="right">Сумма</th></tr></thead><tbody>
-    ${arr.slice().reverse().map(o=>`<tr><td class="num">${dt(o.created_at)}</td><td>${esc(o.car)}</td><td>${(o.services||[]).map(s=>esc(s.name)).join(', ')}</td><td>${esc(o.phone)}</td><td>${esc(sname(o.staff_id))}</td><td>${PAYN[o.pay_type]||''}</td><td class="right num">${money(o.total)}</td></tr>`).join('')||'<tr><td colspan="7" class="empty">Завершённых заказов за период нет</td></tr>'}</tbody></table></div>`;
+  if(A.tab==='orders') return `<div class="tablewrap"><table><thead><tr><th>Время</th><th>Авто</th><th>Услуги</th><th>Телефон</th><th>Выполнил</th><th>Оплата</th><th>Скидка</th><th class="right">Сумма</th></tr></thead><tbody>
+    ${arr.slice().reverse().map(o=>`<tr><td class="num">${dt(o.created_at)}</td><td>${esc(o.car)}</td><td>${(o.services||[]).map(s=>esc(s.name)).join(', ')}</td><td>${esc(o.phone)}</td><td>${esc(sname(o.staff_id))}</td><td>${o.gift?'🎁 Подарок':(PAYN[o.pay_type]||'')}</td><td>${+o.discount>0?'−'+money(o.discount):''}</td><td class="right num">${money(o.total)}</td></tr>`).join('')||'<tr><td colspan="8" class="empty">Завершённых заказов за период нет</td></tr>'}</tbody></table></div>`;
   const max=Math.max(1,...svc.map(s=>s.rev));
   return `<div class="grid g4 stagger">${kpi('Выручка',t.rev)}${kpi('Зарплаты',t.sal)}${kpi('Остальной доход',t.profit)}${kpi('Средний чек',t.avg)}</div>
-  <div class="grid g4 stagger" style="margin-top:14px"><div class="card kpi"><span class="lbl">Заказов</span><b>${t.n}</b></div><div class="card kpi"><span class="lbl">Новых клиентов</span><b>${newCli}</b></div>${kpi('Наличными',cash)}${kpi('Безналичная',t.rev-cash)}</div>${A.sup?`
+  <div class="grid g4 stagger" style="margin-top:14px"><div class="card kpi"><span class="lbl">Заказов</span><b>${t.n}</b></div><div class="card kpi"><span class="lbl">Новых клиентов</span><b>${newCli}</b></div>${kpi('Наличными',cash)}${kpi('Безналичная',t.rev-cash)}</div>
+  <div class="grid g4 stagger" style="margin-top:14px">${kpi('Скидки (дано)',t.disc)}<div class="card kpi"><span class="lbl">Заказов со скидкой</span><b>${t.discN}</b></div><div class="card kpi"><span class="lbl">🎁 Подарочных моек</span><b>${t.giftN}</b></div>${kpi('Подарки по прайсу',t.giftVal)}</div>${A.sup?`
   <div class="grid g2 stagger" style="margin-top:14px">${kpi('Расходники за период',supSum)}${kpi('Чистая прибыль (остальной доход − расходники)',t.profit-supSum)}</div>`:''}
   <div class="grid g-rec" style="margin-top:14px"><div class="card"><h3>Выручка по дням: зарплаты и остальной доход</h3><div class="chartbox"><canvas id="a1"></canvas></div></div>
   <div class="card"><h3>Выручка по услугам</h3><div class="chartbox"><canvas id="a2"></canvas></div></div></div>
@@ -107,13 +110,13 @@ act.aDate = () => { A.from=$('#df').value; A.to=$('#dtt').value; S.render(); };
 act.xlsx = async () => {
   await lib('xlsx');
   const p=period(), arr=inRange(p), t=sum(arr), wb=XLSX.utils.book_new(), add=(n,rows)=>XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(rows.length?rows:[{'':'Нет данных'}]),n);
-  add('Сводка',[{Показатель:'Период',Значение:p[0].toLocaleDateString('ru-RU')+' — '+p[1].toLocaleDateString('ru-RU')},{Показатель:'Выручка',Значение:t.rev},{Показатель:'Зарплаты',Значение:t.sal},{Показатель:'Остальной доход',Значение:t.profit},{Показатель:'Заказов',Значение:t.n},{Показатель:'Средний чек',Значение:Math.round(t.avg)}].concat(A.sup?[{Показатель:'Расходники',Значение:suppliesIn(p).reduce((s,x)=>s+x.qty*x.unit_price,0)},{Показатель:'Чистая прибыль (доход − расходники)',Значение:t.profit-suppliesIn(p).reduce((s,x)=>s+x.qty*x.unit_price,0)}]:[]));
+  add('Сводка',[{Показатель:'Период',Значение:p[0].toLocaleDateString('ru-RU')+' — '+p[1].toLocaleDateString('ru-RU')},{Показатель:'Выручка',Значение:t.rev},{Показатель:'Зарплаты',Значение:t.sal},{Показатель:'Остальной доход',Значение:t.profit},{Показатель:'Заказов',Значение:t.n},{Показатель:'Скидки, ₽',Значение:t.disc},{Показатель:'Подарочных моек',Значение:t.giftN},{Показатель:'Подарки по прайсу, ₽',Значение:t.giftVal},{Показатель:'Средний чек',Значение:Math.round(t.avg)}].concat(A.sup?[{Показатель:'Расходники',Значение:suppliesIn(p).reduce((s,x)=>s+x.qty*x.unit_price,0)},{Показатель:'Чистая прибыль (доход − расходники)',Значение:t.profit-suppliesIn(p).reduce((s,x)=>s+x.qty*x.unit_price,0)}]:[]));
   add('По дням',perDay(arr,p).map(d=>({Дата:d.k,Заказов:d.n,Выручка:d.rev,Зарплаты:d.sal,'Остальной доход':d.profit})));
   add('Услуги',perService(arr).map(s=>({Услуга:s.name,Категория:s.category,Количество:s.n,Выручка:s.rev})));
   add('Сотрудники',perStaff(arr).map(s=>({Сотрудник:s.name,Заказов:s.n,Выручка:s.rev,Зарплата:s.sal,'Средний чек':Math.round(s.avg)})));
   add('Клиенты',perClient(arr).map(c=>({Клиент:c.name,Телефон:c.phone,Авто:c.car,Визитов:c.n,Сумма:c.rev})));
   if(A.sup) add('Расходники',suppliesIn(p).map(x=>({Дата:x.bought_at,Название:x.name,Количество:x.qty,'Цена за ед.':x.unit_price,Сумма:x.qty*x.unit_price,Примечание:x.note||''})));
-  add('Заказы',arr.map(o=>({Дата:dt(o.created_at),Авто:o.car,Услуги:(o.services||[]).map(s=>s.name).join(', '),Телефон:o.phone,Сотрудник:sname(o.staff_id),Оплата:PAYN[o.pay_type],Сумма:o.total})));
+  add('Заказы',arr.map(o=>({Дата:dt(o.created_at),Авто:o.car,Услуги:(o.services||[]).map(s=>s.name).join(', '),Телефон:o.phone,Сотрудник:sname(o.staff_id),Оплата:o.gift?'Подарок':PAYN[o.pay_type],'По прайсу':listOf(o),Скидка:+o.discount||0,Сумма:o.total,'ЗП сотруднику':salary(o)})));
   XLSX.writeFile(wb,`CarwasH_${dkey(p[0])}_${dkey(p[1])}.xlsx`);
 };
 }
