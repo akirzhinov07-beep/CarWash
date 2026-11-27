@@ -562,7 +562,8 @@ function cardBody(){
   <div class="cat" style="margin-top:18px">Фотографии</div>
   <div class="row" style="margin-bottom:10px">
     <select id="photocar" style="width:auto;max-width:60%"><option value="">Без привязки к авто</option>${ks.map(k=>`<option value="${k.id}">${esc(k.model)}${k.plate?' · '+esc(k.plate):''}</option>`).join('')}</select>
-    <label class="btn sm${card.busy?' disabled':''}" style="cursor:pointer">${icon('plus')}${card.busy?'Загрузка…':'Добавить фото'}<input type="file" accept="image/*" multiple style="display:none" data-change="photoPick"${card.busy?' disabled':''}></label></div>
+    <label class="btn sm${card.busy?' disabled':''}" style="cursor:pointer">${icon('plus')}${card.busy?'Загрузка…':'Добавить фото'}<input type="file" accept="image/*" multiple style="display:none" data-change="photoPick"${card.busy?' disabled':''}></label>
+    <label class="btn sm${card.busy?' disabled':''}" style="cursor:pointer">📷 Снять<input type="file" accept="image/*" capture="environment" style="display:none" data-change="photoPick"${card.busy?' disabled':''}></label></div>
   <div id="photogrid">${photoGrid()}</div>
   <div class="actions"><button type="button" class="btn" data-act="closeModal">Закрыть</button></div>`;
 }
