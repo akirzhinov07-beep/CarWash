@@ -1,6 +1,6 @@
 import { db, DEMO } from './db.js';
 import { views, NAV } from './views.js';
-import { S, $, toast, esc, icon, maskPhone, modal } from './core.js';
+import { S, $, toast, esc, icon, maskPhone, modal, friendly } from './core.js';
 const brand = `<a class="brand homelink" href="./" data-act="home" aria-label="На главную"><b>Бумеранг</b><span>${icon('pin')}Атажукина 2Б</span></a>`;
 
 const root = document.getElementById('root');
@@ -21,7 +21,7 @@ function loginScreen(msg=''){
     e.preventDefault(); const f = new FormData(e.target), b = e.target.querySelector('button');
     b.disabled = true; b.textContent = 'Входим…';
     try{ S.user = await db.signIn(f.get('login'), f.get('pass')); await boot(); }
-    catch(err){ loginScreen(err.message); }
+    catch(err){ loginScreen(friendly(err.message)); }
   };
 }
 

@@ -12,10 +12,11 @@ const ADMIN_ONLY = ['orders','staff_pay','supplies','profiles'];
 async function robustFetch(url, opts = {}){
   const method = (opts.method||'GET').toUpperCase(), safe = method==='GET' || method==='HEAD' || String(url).includes('/auth/v1/');
   let last;
-  for(let i=0; i<(safe?3:1); i++){
-    const ctl = new AbortController(), t = setTimeout(()=>ctl.abort(), safe?20000:30000);
+  const auth = String(url).includes('/auth/v1/'), tries = auth ? 2 : safe ? 3 : 1;
+  for(let i=0; i<tries; i++){
+    const ctl = new AbortController(), t = setTimeout(()=>ctl.abort(), auth?10000:safe?20000:30000);
     if(opts.signal) opts.signal.addEventListener('abort', ()=>ctl.abort(), { once:true });
-    try{ const r = await fetch(url, { ...opts, signal:ctl.signal }); clearTimeout(t); if(r.status<500 || !safe || i===2) return r; last = new Error('HTTP '+r.status); }
+    try{ const r = await fetch(url, { ...opts, signal:ctl.signal }); clearTimeout(t); if(r.status<500 || !safe || i===tries-1) return r; last = new Error('HTTP '+r.status); }
     catch(e){ clearTimeout(t); last = e; if(opts.signal?.aborted) throw e; }
     await new Promise(ok=>setTimeout(ok, 500*(i+1)));
   }
