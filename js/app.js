@@ -74,7 +74,7 @@ document.addEventListener('input', e => {
   const ph = e.target.closest('[data-phone]'); if(ph) ph.value = maskPhone(ph.value);
   const el = e.target.closest('[data-input]'); if(el) views.actions[el.dataset.input](el,e);
 });
-try{ if((navigator.hardwareConcurrency||8)<=4||(navigator.deviceMemory||8)<=2) document.documentElement.classList.add('lite'); }catch(e){}
+document.documentElement.classList.add('lite'); // анимации отключены везде
 window.addEventListener('offline',()=>toast('Нет связи с интернетом. Запись не сохранится, пока связь не вернётся',true));
 window.addEventListener('online',()=>toast('Связь восстановлена'));
 document.addEventListener('change', async e => { const el=e.target.closest('[data-change]'); if(el){ try{ await views.actions[el.dataset.change](el,e);}catch(err){toast(err.message,true);} } });
@@ -84,3 +84,5 @@ document.addEventListener('submit', async e => { const f=e.target.closest('[data
   try{ S.user = await db.session(); }catch{ S.user = null; }
   S.user ? boot() : loginScreen();
 })();
+
+window.__cw=1;

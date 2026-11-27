@@ -5,23 +5,31 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>CarwasH — CRM автомойки</title>
 <meta name="robots" content="noindex">
-<link rel="stylesheet" href="css/app.css?v=20261127-3">
+<link rel="stylesheet" href="css/app.css?v=20261127-4">
 <!-- шрифт подгружается фоном и не задерживает показ страницы -->
 <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&display=swap" onload="this.onload=null;this.rel='stylesheet'">
 <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&display=swap"></noscript>
-<script type="importmap">{"imports":{"./js/app.js":"./js/app.js?v=20261127-3","./js/core.js":"./js/core.js?v=20261127-3","./js/db.js":"./js/db.js?v=20261127-3","./js/views.js":"./js/views.js?v=20261127-3","./js/analytics.js":"./js/analytics.js?v=20261127-3","./js/config.js":"./js/config.js?v=20261127-3","./js/vcf.js":"./js/vcf.js?v=20261127-3","./vendor/supabase.js":"./vendor/supabase.js?v=20261127-3"}}</script>
-<link rel="modulepreload" href="js/app.js?v=20261127-3">
-<link rel="modulepreload" href="js/core.js?v=20261127-3">
-<link rel="modulepreload" href="js/db.js?v=20261127-3">
-<link rel="modulepreload" href="js/views.js?v=20261127-3">
-<link rel="modulepreload" href="js/analytics.js?v=20261127-3">
-<link rel="modulepreload" href="js/config.js?v=20261127-3">
-<link rel="modulepreload" href="js/vcf.js?v=20261127-3">
-<link rel="modulepreload" href="vendor/supabase.js?v=20261127-3">
+<script type="importmap">{"imports":{"./js/app.js":"./js/app.js?v=20261127-4","./js/core.js":"./js/core.js?v=20261127-4","./js/db.js":"./js/db.js?v=20261127-4","./js/views.js":"./js/views.js?v=20261127-4","./js/analytics.js":"./js/analytics.js?v=20261127-4","./js/config.js":"./js/config.js?v=20261127-4","./js/vcf.js":"./js/vcf.js?v=20261127-4","./vendor/supabase.js":"./vendor/supabase.js?v=20261127-4"}}</script>
+<link rel="modulepreload" href="js/app.js?v=20261127-4">
+<link rel="modulepreload" href="js/core.js?v=20261127-4">
+<link rel="modulepreload" href="js/db.js?v=20261127-4">
+<link rel="modulepreload" href="js/views.js?v=20261127-4">
+<link rel="modulepreload" href="js/analytics.js?v=20261127-4">
+<link rel="modulepreload" href="js/config.js?v=20261127-4">
+<link rel="modulepreload" href="js/vcf.js?v=20261127-4">
+<link rel="modulepreload" href="vendor/supabase.js?v=20261127-4">
 </head>
 <body>
-<div id="root"></div>
+<div id="root"><div id="boot" style="font:16px system-ui,sans-serif;padding:32px;text-align:center;color:#556">Загрузка…</div></div>
+<script>
+(function(){
+  function fail(why){ var b=document.getElementById('boot'); if(!b||window.__cw) return; b.style.color='#b00'; b.innerHTML='<b>Сайт не запустился</b><br><br>'+why+'<br><br><small>Браузер: '+navigator.userAgent+'</small><br><br><button onclick="location.reload()" style="font-size:16px;padding:10px 18px">Обновить</button>'; }
+  if(!(window.HTMLScriptElement&&HTMLScriptElement.supports&&HTMLScriptElement.supports('importmap'))) fail('Браузер слишком старый. Обновите Google Chrome и «Android System WebView» в Play Маркет.');
+  window.addEventListener('error',function(e){ if(!window.__cw) fail('Ошибка: '+(e.message||'загрузки файла')); },true);
+  setTimeout(function(){ fail('Не загрузились файлы сайта. Скорее всего слабый интернет или блокировка (VPN, блокировщик рекламы). Попробуйте другую сеть.'); },15000);
+})();
+</script>
 <div class="toasts" id="toasts" aria-live="polite"></div>
-<script type="module" src="js/app.js?v=20261127-3"></script>
+<script type="module" src="js/app.js?v=20261127-4"></script>
 </body>
 </html>
